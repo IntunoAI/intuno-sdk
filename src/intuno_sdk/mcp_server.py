@@ -212,6 +212,69 @@ async def create_task(
 
 
 @mcp.tool()
+async def list_conversations(limit: int = 50) -> str:
+    """List conversations for the current user.
+
+    Use this to browse chat history before reading messages from a specific conversation.
+
+    Args:
+        limit: Maximum number of conversations to return (default 50).
+    """
+    client = _get_client()
+    try:
+        conversations = await client.list_conversations()
+        results = [
+            {
+                "id": c.id,
+                "title": c.title,
+                "external_user_id": c.external_user_id,
+                "created_at": c.created_at,
+            }
+            for c in conversations[:limit]
+        ]
+        return json.dumps(results, indent=2)
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def get_conversation_messages(
+    conversation_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> str:
+    """List messages in a conversation.
+
+    Use this to read the chat history of a conversation.
+    Call list_conversations first to get conversation IDs.
+
+    Args:
+        conversation_id: The conversation ID.
+        limit: Maximum number of messages to return (1-500, default 100).
+        offset: Offset for pagination (default 0).
+    """
+    client = _get_client()
+    try:
+        messages = await client.get_messages(
+            conversation_id=conversation_id,
+            limit=limit,
+            offset=offset,
+        )
+        results = [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at,
+            }
+            for m in messages
+        ]
+        return json.dumps(results, indent=2)
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
 async def get_task_status(task_id: str) -> str:
     """Check the current status and result of a previously created task.
 

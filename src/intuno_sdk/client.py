@@ -10,7 +10,7 @@ from intuno_sdk.exceptions import (
     InvocationError,
     IntunoError,
 )
-from intuno_sdk.models import Agent, InvokeResult, TaskResult
+from intuno_sdk.models import Agent, Conversation, InvokeResult, Message, TaskResult
 
 
 class IntunoClient:
@@ -232,6 +232,203 @@ class IntunoClient:
             raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def list_new_agents(self, days: int = 7, limit: int = 20) -> List[Agent]:
+        """
+        List recently published agents.
+
+        Args:
+            days: Agents created in the last N days.
+            limit: Maximum number of agents to return.
+
+        Returns:
+            A list of Agent objects.
+        """
+        try:
+            response = self._http_client.get(
+                "/registry/agents/new", params={"days": days, "limit": limit}
+            )
+            response.raise_for_status()
+            agents = [Agent(**agent_data) for agent_data in response.json()]
+            for agent in agents:
+                agent._client = self
+            return agents
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def list_trending_agents(self, window_days: int = 7, limit: int = 20) -> List[Agent]:
+        """
+        List trending agents by invocation count.
+
+        Args:
+            window_days: Invocation count window in days.
+            limit: Maximum number of agents to return.
+
+        Returns:
+            A list of Agent objects ordered by popularity.
+        """
+        try:
+            response = self._http_client.get(
+                "/registry/agents/trending",
+                params={"window_days": window_days, "limit": limit},
+            )
+            response.raise_for_status()
+            agents = [Agent(**agent_data) for agent_data in response.json()]
+            for agent in agents:
+                agent._client = self
+            return agents
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def list_conversations(
+        self,
+        integration_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+    ) -> List[Conversation]:
+        """
+        List conversations for the current user.
+
+        Args:
+            integration_id: Optional filter by integration ID.
+            external_user_id: Optional filter by external user ID.
+
+        Returns:
+            A list of Conversation objects.
+        """
+        params: Dict[str, str] = {}
+        if integration_id is not None:
+            params["integration_id"] = integration_id
+        if external_user_id is not None:
+            params["external_user_id"] = external_user_id
+        try:
+            response = self._http_client.get(
+                "/conversations", params=params if params else None
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [Conversation(**self._norm_conv(c)) for c in data]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError("Conversations not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_conversation(self, conversation_id: str) -> Conversation:
+        """
+        Get a conversation by ID.
+
+        Args:
+            conversation_id: The conversation ID.
+
+        Returns:
+            A Conversation object.
+        """
+        try:
+            response = self._http_client.get(f"/conversations/{conversation_id}")
+            response.raise_for_status()
+            return Conversation(**self._norm_conv(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Conversation '{conversation_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_messages(
+        self,
+        conversation_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Message]:
+        """
+        List messages in a conversation.
+
+        Args:
+            conversation_id: The conversation ID.
+            limit: Maximum number of messages (1-500, default 100).
+            offset: Offset for pagination (default 0).
+
+        Returns:
+            A list of Message objects.
+        """
+        try:
+            response = self._http_client.get(
+                f"/conversations/{conversation_id}/messages",
+                params={"limit": limit, "offset": offset},
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [Message(**self._norm_msg(m)) for m in data]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Conversation '{conversation_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_message(self, conversation_id: str, message_id: str) -> Message:
+        """
+        Get a specific message by ID.
+
+        Args:
+            conversation_id: The conversation ID.
+            message_id: The message ID.
+
+        Returns:
+            A Message object.
+        """
+        try:
+            response = self._http_client.get(
+                f"/conversations/{conversation_id}/messages/{message_id}"
+            )
+            response.raise_for_status()
+            return Message(**self._norm_msg(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Message '{message_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    @staticmethod
+    def _norm_conv(obj: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize conversation dict for Conversation model (UUID/datetime to str)."""
+        out: Dict[str, Any] = dict(obj)
+        for k in ("id", "user_id", "integration_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_msg(obj: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize message dict for Message model (UUID/datetime to str)."""
+        out: Dict[str, Any] = dict(obj)
+        for k in ("id", "conversation_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        if "created_at" in out and out["created_at"] is not None:
+            out["created_at"] = str(out["created_at"])
+        return out
 
     def close(self):
         """Closes the underlying HTTP client."""
@@ -460,6 +657,125 @@ class AsyncIntunoClient:
                 raise AuthenticationError("Invalid API key.") from e
             if e.response.status_code == 404:
                 raise IntunoError(f"Agent '{agent_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def list_conversations(
+        self,
+        integration_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+    ) -> List[Conversation]:
+        """
+        List conversations for the current user.
+
+        Args:
+            integration_id: Optional filter by integration ID.
+            external_user_id: Optional filter by external user ID.
+
+        Returns:
+            A list of Conversation objects.
+        """
+        params: Dict[str, str] = {}
+        if integration_id is not None:
+            params["integration_id"] = integration_id
+        if external_user_id is not None:
+            params["external_user_id"] = external_user_id
+        try:
+            response = await self._http_client.get(
+                "/conversations", params=params if params else None
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [Conversation(**IntunoClient._norm_conv(c)) for c in data]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError("Conversations not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_conversation(self, conversation_id: str) -> Conversation:
+        """
+        Get a conversation by ID.
+
+        Args:
+            conversation_id: The conversation ID.
+
+        Returns:
+            A Conversation object.
+        """
+        try:
+            response = await self._http_client.get(f"/conversations/{conversation_id}")
+            response.raise_for_status()
+            return Conversation(**IntunoClient._norm_conv(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Conversation '{conversation_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_messages(
+        self,
+        conversation_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Message]:
+        """
+        List messages in a conversation.
+
+        Args:
+            conversation_id: The conversation ID.
+            limit: Maximum number of messages (1-500, default 100).
+            offset: Offset for pagination (default 0).
+
+        Returns:
+            A list of Message objects.
+        """
+        try:
+            response = await self._http_client.get(
+                f"/conversations/{conversation_id}/messages",
+                params={"limit": limit, "offset": offset},
+            )
+            response.raise_for_status()
+            data = response.json()
+            return [Message(**IntunoClient._norm_msg(m)) for m in data]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Conversation '{conversation_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_message(self, conversation_id: str, message_id: str) -> Message:
+        """
+        Get a specific message by ID.
+
+        Args:
+            conversation_id: The conversation ID.
+            message_id: The message ID.
+
+        Returns:
+            A Message object.
+        """
+        try:
+            response = await self._http_client.get(
+                f"/conversations/{conversation_id}/messages/{message_id}"
+            )
+            response.raise_for_status()
+            return Message(**IntunoClient._norm_msg(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Message '{message_id}' not found.") from e
             raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e

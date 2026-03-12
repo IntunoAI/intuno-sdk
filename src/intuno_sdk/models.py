@@ -137,3 +137,30 @@ class TaskResult(BaseModel):
     external_user_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class Conversation(BaseModel):
+    """Represents a chat conversation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    integration_id: Optional[str] = None
+    external_user_id: Optional[str] = None
+    title: Optional[str] = None
+    user_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class Message(BaseModel):
+    """Represents a message in a conversation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    conversation_id: str
+    role: str  # user | assistant | system | tool
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None

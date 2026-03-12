@@ -15,14 +15,23 @@ from intuno_sdk.exceptions import (
     InvocationError,
     IntunoError,
 )
-from intuno_sdk.models import Agent, Capability, InvokeResult, TaskResult
+from intuno_sdk.models import (
+    Agent,
+    Capability,
+    Conversation,
+    InvokeResult,
+    Message,
+    TaskResult,
+)
 
 __all__ = [
     "IntunoClient",
     "AsyncIntunoClient",
     "Agent",
     "Capability",
+    "Conversation",
     "InvokeResult",
+    "Message",
     "TaskResult",
     "IntunoError",
     "APIKeyMissingError",
