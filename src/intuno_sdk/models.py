@@ -111,13 +111,14 @@ class Agent(BaseModel):
 class InvokeResult(BaseModel):
     """Represents the result of an agent invocation."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     latency_ms: int = 0
     status_code: int = 0
+    conversation_id: Optional[str] = None
 
 
 class TaskResult(BaseModel):
