@@ -78,8 +78,8 @@ def make_openai_tools_from_agent(agent: Agent) -> List[Dict[str, Any]]:
         tool_definition = {
             "type": "function",
             "function": {
-                "name": capability.name,
-                "description": capability.description,
+                "name": capability.display_name,
+                "description": capability.description or capability.display_name,
                 "parameters": capability.input_schema,
             },
         }

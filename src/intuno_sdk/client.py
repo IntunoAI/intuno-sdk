@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from pydantic import ValidationError
@@ -10,7 +10,7 @@ from src.intuno_sdk.exceptions import (
     InvocationError,
     IntunoError,
 )
-from src.intuno_sdk.models import Agent, InvokeResult
+from src.intuno_sdk.models import Agent, InvokeResult, TaskResult
 
 
 class IntunoClient:
@@ -29,7 +29,7 @@ class IntunoClient:
             headers={
                 "X-API-Key": self.api_key,
                 "Content-Type": "application/json",
-                "User-Agent": "Intuno-SDK/0.1.0",
+                "User-Agent": "Intuno-SDK/0.2.0",
             },
         )
 
@@ -65,6 +65,9 @@ class IntunoClient:
         agent_id: str,
         capability_id: str,
         input_data: Dict[str, Any],
+        conversation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
     ) -> InvokeResult:
         """
         Invoke an agent's capability.
@@ -73,15 +76,25 @@ class IntunoClient:
             agent_id: The ID of the agent to invoke.
             capability_id: The ID of the capability to use.
             input_data: A dictionary containing the input for the capability.
+            conversation_id: Optional conversation ID to attach this invocation to.
+            message_id: Optional message ID within the conversation.
+            external_user_id: Optional end-user ID for multi-user apps.
 
         Returns:
             An InvokeResult object with the outcome of the call.
         """
-        payload = {
+        payload: Dict[str, Any] = {
             "agent_id": agent_id,
             "capability_id": capability_id,
             "input": input_data,
         }
+        if conversation_id is not None:
+            payload["conversation_id"] = conversation_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if external_user_id is not None:
+            payload["external_user_id"] = external_user_id
+
         try:
             response = self._http_client.post("/broker/invoke", json=payload)
             response.raise_for_status()
@@ -99,6 +112,99 @@ class IntunoClient:
             except Exception:
                 error_details = e.response.text
             raise IntunoError(f"API request failed: {error_details}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def create_task(
+        self,
+        goal: str,
+        input_data: Optional[Dict[str, Any]] = None,
+        conversation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+        async_mode: bool = False,
+        idempotency_key: Optional[str] = None,
+    ) -> TaskResult:
+        """
+        Create and run a multi-step task via the orchestrator.
+
+        Args:
+            goal: Natural language goal for the task.
+            input_data: Optional input data for the task.
+            conversation_id: Optional conversation to attach the task to.
+            message_id: Optional message within the conversation.
+            external_user_id: Optional end-user ID for multi-user apps.
+            async_mode: If True, task runs in background; poll with get_task().
+            idempotency_key: Optional key to prevent duplicate task creation.
+
+        Returns:
+            A TaskResult with the task state (completed if sync, pending if async).
+        """
+        payload: Dict[str, Any] = {
+            "goal": goal,
+            "input": input_data or {},
+        }
+        if conversation_id is not None:
+            payload["conversation_id"] = conversation_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if external_user_id is not None:
+            payload["external_user_id"] = external_user_id
+
+        headers = {}
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        try:
+            response = self._http_client.post(
+                "/tasks",
+                json=payload,
+                params={"async": str(async_mode).lower()},
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if response.status_code == 202:
+                return TaskResult(
+                    id=data["task_id"],
+                    status="pending",
+                    goal=goal,
+                    input=input_data or {},
+                )
+            return TaskResult(**data)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            try:
+                error_details = e.response.json().get("detail", e.response.text)
+            except Exception:
+                error_details = e.response.text
+            raise IntunoError(f"Task creation failed: {error_details}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_task(self, task_id: str) -> TaskResult:
+        """
+        Get the current state of a task.
+
+        Args:
+            task_id: The task ID to poll.
+
+        Returns:
+            A TaskResult with the current task state.
+        """
+        try:
+            response = self._http_client.get(f"/tasks/{task_id}")
+            response.raise_for_status()
+            return TaskResult(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            try:
+                error_details = e.response.json().get("detail", e.response.text)
+            except Exception:
+                error_details = e.response.text
+            raise IntunoError(f"Failed to get task: {error_details}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
 
@@ -129,7 +235,7 @@ class AsyncIntunoClient:
             headers={
                 "X-API-Key": self.api_key,
                 "Content-Type": "application/json",
-                "User-Agent": "Intuno-SDK/0.1.0",
+                "User-Agent": "Intuno-SDK/0.2.0",
             },
         )
 
@@ -165,6 +271,9 @@ class AsyncIntunoClient:
         agent_id: str,
         capability_id: str,
         input_data: Dict[str, Any],
+        conversation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
     ) -> InvokeResult:
         """
         Asynchronously invoke an agent's capability.
@@ -173,15 +282,25 @@ class AsyncIntunoClient:
             agent_id: The ID of the agent to invoke.
             capability_id: The ID of the capability to use.
             input_data: A dictionary containing the input for the capability.
+            conversation_id: Optional conversation ID to attach this invocation to.
+            message_id: Optional message ID within the conversation.
+            external_user_id: Optional end-user ID for multi-user apps.
 
         Returns:
             An InvokeResult object with the outcome of the call.
         """
-        payload = {
+        payload: Dict[str, Any] = {
             "agent_id": agent_id,
             "capability_id": capability_id,
             "input": input_data,
         }
+        if conversation_id is not None:
+            payload["conversation_id"] = conversation_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if external_user_id is not None:
+            payload["external_user_id"] = external_user_id
+
         try:
             response = await self._http_client.post("/broker/invoke", json=payload)
             response.raise_for_status()
@@ -199,6 +318,99 @@ class AsyncIntunoClient:
             except Exception:
                 error_details = e.response.text
             raise IntunoError(f"API request failed: {error_details}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def create_task(
+        self,
+        goal: str,
+        input_data: Optional[Dict[str, Any]] = None,
+        conversation_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+        async_mode: bool = False,
+        idempotency_key: Optional[str] = None,
+    ) -> TaskResult:
+        """
+        Create and run a multi-step task via the orchestrator.
+
+        Args:
+            goal: Natural language goal for the task.
+            input_data: Optional input data for the task.
+            conversation_id: Optional conversation to attach the task to.
+            message_id: Optional message within the conversation.
+            external_user_id: Optional end-user ID for multi-user apps.
+            async_mode: If True, task runs in background; poll with get_task().
+            idempotency_key: Optional key to prevent duplicate task creation.
+
+        Returns:
+            A TaskResult with the task state (completed if sync, pending if async).
+        """
+        payload: Dict[str, Any] = {
+            "goal": goal,
+            "input": input_data or {},
+        }
+        if conversation_id is not None:
+            payload["conversation_id"] = conversation_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if external_user_id is not None:
+            payload["external_user_id"] = external_user_id
+
+        headers = {}
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        try:
+            response = await self._http_client.post(
+                "/tasks",
+                json=payload,
+                params={"async": str(async_mode).lower()},
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if response.status_code == 202:
+                return TaskResult(
+                    id=data["task_id"],
+                    status="pending",
+                    goal=goal,
+                    input=input_data or {},
+                )
+            return TaskResult(**data)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            try:
+                error_details = e.response.json().get("detail", e.response.text)
+            except Exception:
+                error_details = e.response.text
+            raise IntunoError(f"Task creation failed: {error_details}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_task(self, task_id: str) -> TaskResult:
+        """
+        Get the current state of a task.
+
+        Args:
+            task_id: The task ID to poll.
+
+        Returns:
+            A TaskResult with the current task state.
+        """
+        try:
+            response = await self._http_client.get(f"/tasks/{task_id}")
+            response.raise_for_status()
+            return TaskResult(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            try:
+                error_details = e.response.json().get("detail", e.response.text)
+            except Exception:
+                error_details = e.response.text
+            raise IntunoError(f"Failed to get task: {error_details}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
 

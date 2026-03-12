@@ -24,17 +24,17 @@ def mock_agent():
         id="cap-id-1",
         name="test_capability",
         description="A test capability",
-        inputSchema={"type": "object", "properties": {"x": {"type": "integer"}}},
-        outputSchema={},
+        input_schema={"type": "object", "properties": {"x": {"type": "integer"}}},
+        output_schema={},
     )
     agent = Agent(
         id="uuid-1",
-        agentId="agent-1",
+        agent_id="agent-1",
         name="Test Agent",
         description="A test agent",
         version="1.0",
         tags=["test"],
-        isActive=True,
+        is_active=True,
         capabilities=[cap],
     )
     # Mock the invoke method for testing the tool's function

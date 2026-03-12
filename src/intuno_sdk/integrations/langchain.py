@@ -52,7 +52,7 @@ def create_discovery_tool(client: Union[IntunoClient, AsyncIntunoClient]) -> Bas
             summary += f"Description: {agent.description}\n"
             summary += "Capabilities:\n"
             for cap in agent.capabilities:
-                summary += f"  - Name: {cap.name}: {cap.description}\n"
+                summary += f"  - {cap.display_name}: {cap.description or 'No description'}\n"
         return summary
 
     def _run_sync(query: str) -> str:
@@ -111,30 +111,31 @@ def make_tools_from_agent(agent: Agent) -> List[Tool]:
     """
     tools: List[Tool] = []
     for capability in agent.capabilities:
+        cap_name = capability.display_name
         args_schema = _create_pydantic_model_from_schema(
             schema=capability.input_schema,
-            model_name=f"{capability.name.capitalize()}Input",
+            model_name=f"{cap_name.capitalize()}Input",
         )
 
-        def _run_capability(**kwargs):
+        def _run_capability(_cap_name=cap_name, **kwargs):
             result = agent.invoke(
-                capability_name_or_id=capability.name, input_data=kwargs
+                capability_name_or_id=_cap_name, input_data=kwargs
             )
             if result.success:
                 return result.data
             return f"Error during invocation: {result.error}"
 
-        async def _arun_capability(**kwargs):
+        async def _arun_capability(_cap_name=cap_name, **kwargs):
             result = await agent.ainvoke(
-                capability_name_or_id=capability.name, input_data=kwargs
+                capability_name_or_id=_cap_name, input_data=kwargs
             )
             if result.success:
                 return result.data
             return f"Error during invocation: {result.error}"
 
         tool = Tool(
-            name=capability.name,
-            description=capability.description,
+            name=cap_name,
+            description=capability.description or cap_name,
             func=_run_capability,
             coroutine=_arun_capability,
             args_schema=args_schema,

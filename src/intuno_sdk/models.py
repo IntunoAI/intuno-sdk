@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 if TYPE_CHECKING:
     from src.intuno_sdk.client import AsyncIntunoClient, IntunoClient
@@ -11,24 +11,37 @@ if TYPE_CHECKING:
 class Capability(BaseModel):
     """Represents an agent's capability."""
 
+    model_config = ConfigDict(extra="ignore")
+
     id: str
-    name: str
-    description: str
-    input_schema: Dict[str, Any] = Field(..., alias="inputSchema")
-    output_schema: Dict[str, Any] = Field(..., alias="outputSchema")
+    name: Optional[str] = None
+    description: Optional[str] = None
+    input_schema: Dict[str, Any] = {}
+    output_schema: Dict[str, Any] = {}
+    auth_type: Optional[Dict[str, str]] = None
+
+    @property
+    def display_name(self) -> str:
+        return self.name or self.id
 
 
 class Agent(BaseModel):
     """Represents an Intuno Agent."""
 
-    id: str  # Internal UUID
-    agent_id: str = Field(..., alias="agentId")
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    agent_id: str
     name: str
     description: str
     version: str
-    tags: List[str]
-    is_active: bool = Field(..., alias="isActive")
-    capabilities: List[Capability]
+    tags: List[str] = []
+    is_active: bool = True
+    capabilities: List[Capability] = []
+    trust_verification: Optional[str] = None
+    category: Optional[str] = None
+    similarity_score: Optional[float] = None
+    created_at: Optional[str] = None
 
     _client: Optional[Union["IntunoClient", "AsyncIntunoClient"]] = PrivateAttr(
         default=None
@@ -36,12 +49,10 @@ class Agent(BaseModel):
 
     def _find_capability_id(self, name_or_id: str) -> str:
         """Finds a capability ID from a name or ID."""
-        # Check if it's a direct ID match first
         for cap in self.capabilities:
             if cap.id == name_or_id:
                 return cap.id
 
-        # If not, check for a name match
         for cap in self.capabilities:
             if cap.name == name_or_id:
                 return cap.id
@@ -70,7 +81,7 @@ class Agent(BaseModel):
 
         capability_id = self._find_capability_id(capability_name_or_id)
         return self._client.invoke(
-            agent_id=self.id, capability_id=capability_id, input_data=input_data
+            agent_id=self.agent_id, capability_id=capability_id, input_data=input_data
         )
 
     async def ainvoke(
@@ -93,15 +104,35 @@ class Agent(BaseModel):
 
         capability_id = self._find_capability_id(capability_name_or_id)
         return await self._client.ainvoke(
-            agent_id=self.id, capability_id=capability_id, input_data=input_data
+            agent_id=self.agent_id, capability_id=capability_id, input_data=input_data
         )
 
 
 class InvokeResult(BaseModel):
     """Represents the result of an agent invocation."""
 
+    model_config = ConfigDict(extra="ignore")
+
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    latency_ms: int = Field(..., alias="latencyMs")
-    status_code: int = Field(..., alias="statusCode")
+    latency_ms: int = 0
+    status_code: int = 0
+
+
+class TaskResult(BaseModel):
+    """Represents the result of a task execution."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    status: str
+    goal: str
+    input: Dict[str, Any] = {}
+    result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    steps: Optional[List[Dict[str, Any]]] = None
+    conversation_id: Optional[str] = None
+    external_user_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
