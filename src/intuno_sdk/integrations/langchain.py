@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Type, Union
 
 from pydantic import BaseModel, Field, create_model
 
-from src.intuno_sdk.client import AsyncIntunoClient, IntunoClient
-from src.intuno_sdk.models import Agent
+from intuno_sdk.client import AsyncIntunoClient, IntunoClient
+from intuno_sdk.models import Agent
 
 try:
     from langchain_core.tools import BaseTool, Tool

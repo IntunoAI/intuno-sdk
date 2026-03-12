@@ -4,9 +4,9 @@ import pytest
 import respx
 from httpx import Response
 
-from src.intuno_sdk import AsyncIntunoClient, IntunoClient
-from src.intuno_sdk.constants import DEFAULT_BASE_URL
-from src.intuno_sdk.exceptions import (
+from intuno_sdk import AsyncIntunoClient, IntunoClient
+from intuno_sdk.constants import DEFAULT_BASE_URL
+from intuno_sdk.exceptions import (
     APIKeyMissingError,
     AuthenticationError,
     InvocationError,

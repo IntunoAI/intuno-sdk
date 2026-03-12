@@ -7,7 +7,7 @@ with the OpenAI API's 'tools' parameter.
 
 from typing import Any, Dict, List
 
-from src.intuno_sdk.models import Agent
+from intuno_sdk.models import Agent
 
 
 def get_discovery_tool_openai_schema() -> Dict[str, Any]:

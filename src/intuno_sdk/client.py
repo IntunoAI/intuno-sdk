@@ -3,14 +3,14 @@ from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import ValidationError
 
-from src.intuno_sdk.constants import DEFAULT_BASE_URL
-from src.intuno_sdk.exceptions import (
+from intuno_sdk.constants import DEFAULT_BASE_URL
+from intuno_sdk.exceptions import (
     APIKeyMissingError,
     AuthenticationError,
     InvocationError,
     IntunoError,
 )
-from src.intuno_sdk.models import Agent, InvokeResult, TaskResult
+from intuno_sdk.models import Agent, InvokeResult, TaskResult
 
 
 class IntunoClient:
@@ -205,6 +205,31 @@ class IntunoClient:
             except Exception:
                 error_details = e.response.text
             raise IntunoError(f"Failed to get task: {error_details}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_agent(self, agent_id: str) -> Agent:
+        """
+        Get full agent details by agent_id.
+
+        Args:
+            agent_id: The agent ID (e.g. agent:ns:name:version).
+
+        Returns:
+            An Agent object with capabilities and metadata.
+        """
+        try:
+            response = self._http_client.get(f"/registry/agents/{agent_id}")
+            response.raise_for_status()
+            agent = Agent(**response.json())
+            agent._client = self
+            return agent
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Agent '{agent_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
 
@@ -411,6 +436,86 @@ class AsyncIntunoClient:
             except Exception:
                 error_details = e.response.text
             raise IntunoError(f"Failed to get task: {error_details}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_agent(self, agent_id: str) -> Agent:
+        """
+        Get full agent details by agent_id.
+
+        Args:
+            agent_id: The agent ID (e.g. agent:ns:name:version).
+
+        Returns:
+            An Agent object with capabilities and metadata.
+        """
+        try:
+            response = await self._http_client.get(f"/registry/agents/{agent_id}")
+            response.raise_for_status()
+            agent = Agent(**response.json())
+            agent._client = self
+            return agent
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Agent '{agent_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def list_new_agents(self, days: int = 7, limit: int = 20) -> List[Agent]:
+        """
+        List recently published agents.
+
+        Args:
+            days: Agents created in the last N days.
+            limit: Maximum number of agents to return.
+
+        Returns:
+            A list of Agent objects.
+        """
+        try:
+            response = await self._http_client.get(
+                "/registry/agents/new", params={"days": days, "limit": limit}
+            )
+            response.raise_for_status()
+            agents = [Agent(**agent_data) for agent_data in response.json()]
+            for agent in agents:
+                agent._client = self
+            return agents
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def list_trending_agents(self, window_days: int = 7, limit: int = 20) -> List[Agent]:
+        """
+        List trending agents by invocation count.
+
+        Args:
+            window_days: Invocation count window in days.
+            limit: Maximum number of agents to return.
+
+        Returns:
+            A list of Agent objects ordered by popularity.
+        """
+        try:
+            response = await self._http_client.get(
+                "/registry/agents/trending",
+                params={"window_days": window_days, "limit": limit},
+            )
+            response.raise_for_status()
+            agents = [Agent(**agent_data) for agent_data in response.json()]
+            for agent in agents:
+                agent._client = self
+            return agents
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
 

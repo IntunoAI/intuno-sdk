@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 if TYPE_CHECKING:
-    from src.intuno_sdk.client import AsyncIntunoClient, IntunoClient
+    from intuno_sdk.client import AsyncIntunoClient, IntunoClient
 
 
 class Capability(BaseModel):

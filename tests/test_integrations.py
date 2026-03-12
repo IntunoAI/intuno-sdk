@@ -4,15 +4,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.intuno_sdk.integrations.langchain import (
+from intuno_sdk.integrations.langchain import (
     create_discovery_tool,
     make_tools_from_agent,
 )
-from src.intuno_sdk.integrations.openai import (
+from intuno_sdk.integrations.openai import (
     get_discovery_tool_openai_schema,
     make_openai_tools_from_agent,
 )
-from src.intuno_sdk.models import Agent, Capability
+from intuno_sdk.models import Agent, Capability
 
 # --- Fixtures ---
 
