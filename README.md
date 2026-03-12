@@ -83,25 +83,98 @@ if __name__ == "__main__":
 
 ## MCP Server
 
-The SDK includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/) server that exposes the Intuno Agent Network to any MCP-compatible AI assistant (Cursor, Claude Desktop, etc.).
+The Intuno Agent Network is available as a [Model Context Protocol](https://modelcontextprotocol.io/) server, compatible with Cursor, Claude Desktop, OpenClaw, and any MCP client.
 
-### Quick Start
+### Option 1: Remote (no install required)
+
+If your Intuno instance is deployed, connect directly to the hosted MCP endpoint. No pip install, no local process.
+
+**Cursor** (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "intuno": {
+      "type": "streamable-http",
+      "url": "https://your-intuno-instance.com/mcp",
+      "headers": {
+        "X-API-Key": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "intuno": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://your-intuno-instance.com/mcp",
+        "--header",
+        "X-API-Key: your-api-key"
+      ]
+    }
+  }
+}
+```
+
+**OpenClaw** (`~/.openclaw/openclaw.json`):
+
+```json5
+{
+  "plugins": {
+    "entries": {
+      "intuno": {
+        "enabled": true,
+        "url": "https://your-intuno-instance.com/mcp",
+        "headers": { "X-API-Key": "your-api-key" }
+      }
+    }
+  }
+}
+```
+
+### Option 2: Local (via pip)
+
+Run a local MCP server that connects to your Intuno backend over HTTP.
 
 ```bash
 pip install "intuno-sdk[mcp]"
-```
-
-Run the server:
-
-```bash
 INTUNO_API_KEY=your-key intuno-mcp
 ```
 
-Or with `python -m`:
+**Cursor** (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "intuno": {
+      "command": "intuno-mcp",
+      "env": {
+        "INTUNO_API_KEY": "your-api-key",
+        "INTUNO_BASE_URL": "https://your-intuno-instance.com"
+      }
+    }
+  }
+}
+```
+
+The local server defaults to `stdio` transport. For HTTP-based transports:
 
 ```bash
-INTUNO_API_KEY=your-key python -m intuno_sdk.mcp_server
+intuno-mcp --transport streamable-http --port 8080
+intuno-mcp --transport sse --port 8080
 ```
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `INTUNO_API_KEY` | Yes | - | Your Intuno API key |
+| `INTUNO_BASE_URL` | No | `http://localhost:8000` | Intuno backend URL |
 
 ### Available Tools
 
@@ -119,43 +192,6 @@ INTUNO_API_KEY=your-key python -m intuno_sdk.mcp_server
 |-----|-------------|
 | `intuno://agents/trending` | Trending agents by recent invocation count |
 | `intuno://agents/new` | Recently published agents (last 7 days) |
-
-### Cursor Configuration
-
-Add to `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "intuno": {
-      "command": "intuno-mcp",
-      "env": {
-        "INTUNO_API_KEY": "your-api-key",
-        "INTUNO_BASE_URL": "https://your-wisdom-instance.com"
-      }
-    }
-  }
-}
-```
-
-### Transport Options
-
-The server defaults to `stdio` (standard for Cursor/Claude Desktop). For HTTP-based transports:
-
-```bash
-# Streamable HTTP
-INTUNO_API_KEY=your-key intuno-mcp --transport streamable-http --port 8080
-
-# SSE
-INTUNO_API_KEY=your-key intuno-mcp --transport sse --port 8080
-```
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `INTUNO_API_KEY` | Yes | - | Your Intuno API key |
-| `INTUNO_BASE_URL` | No | `http://localhost:8000` | Wisdom backend URL |
 
 ## Integrations
 
