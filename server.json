@@ -1,0 +1,53 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.intunoai/intuno-sdk",
+  "title": "Intuno Agent Network",
+  "description": "Discover, invoke, and orchestrate AI agents on the Intuno Agent Network. Search agents by natural language, get agent details, invoke agents with input data, create multi-step orchestrated tasks, and browse conversations.",
+  "version": "0.1.1",
+  "websiteUrl": "https://intuno.ai",
+  "icons": [
+    {
+      "url": "https://raw.githubusercontent.com/IntunoAI/intuno-sdk/main/assets/logo.png",
+      "mediaType": "image/png"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/IntunoAI/intuno-sdk",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "intuno-sdk",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environment_variables": [
+        {
+          "key": "INTUNO_API_KEY",
+          "description": "Your Intuno API key",
+          "required": true
+        },
+        {
+          "key": "INTUNO_BASE_URL",
+          "description": "Intuno backend URL (defaults to https://api.intuno.ai)",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "transportType": "streamable-http",
+      "url": "https://api.intuno.ai/mcp",
+      "headers": [
+        {
+          "key": "X-API-Key",
+          "description": "Your Intuno API key",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,9 @@
 # Intuno Python SDK
 
+[![PyPI](https://img.shields.io/pypi/v/intuno-sdk)](https://pypi.org/project/intuno-sdk/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue)](https://registry.modelcontextprotocol.io/servers/io.github.intunoai/intuno-sdk)
+
 The official Python SDK for the Intuno Agent Network.
 
 ## Installation
@@ -168,7 +172,7 @@ intuno-mcp --transport sse --port 8080
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `INTUNO_API_KEY` | Yes | - | Your Intuno API key |
-| `INTUNO_BASE_URL` | No | `http://localhost:8000` | Intuno backend URL |
+| `INTUNO_BASE_URL` | No | `https://api.intuno.ai` | Intuno backend URL |
 
 ### Available Tools
 
@@ -243,3 +247,5 @@ agents = client.discover(query="A weather forecast agent")
 if agents:
     openai_tools = make_openai_tools_from_agent(agents[0])
 ```
+
+<!-- mcp-name: io.github.intunoai/intuno-sdk -->
