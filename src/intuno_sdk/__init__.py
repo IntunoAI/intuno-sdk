@@ -8,6 +8,7 @@ The official Python SDK for the Intuno Agent Network.
 :license: Apache 2.0, see LICENSE for more details.
 """
 
+from intuno_sdk.constants import SDK_VERSION as __version__
 from intuno_sdk.client import AsyncIntunoClient, IntunoClient
 from intuno_sdk.exceptions import (
     APIKeyMissingError,
@@ -24,6 +25,7 @@ from intuno_sdk.models import (
 )
 
 __all__ = [
+    "__version__",
     "IntunoClient",
     "AsyncIntunoClient",
     "Agent",

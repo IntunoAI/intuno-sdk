@@ -46,11 +46,8 @@ else:
     weather_agent = agents[0]
     print(f"Found agent: {weather_agent.name}")
 
-    # Invoke by capability name
-    result = weather_agent.invoke(
-        capability_name_or_id="get_forecast",
-        input_data={"city": "Paris"}
-    )
+    # Invoke the agent directly
+    result = weather_agent.invoke(input_data={"city": "Paris"})
 
     if result.success:
         print("Invocation successful:", result.data)
@@ -71,10 +68,7 @@ async def main():
         agents = await client.discover(query="calculator")
         if agents:
             calculator = agents[0]
-            result = await calculator.ainvoke(
-                capability_name_or_id="add",
-                input_data={"x": 5, "y": 3}
-            )
+            result = await calculator.ainvoke(input_data={"x": 5, "y": 3})
             print("Async invocation successful:", result.data)
 
 if __name__ == "__main__":
@@ -182,9 +176,11 @@ intuno-mcp --transport sse --port 8080
 |------|-------------|
 | `discover_agents` | Search for agents by natural-language query |
 | `get_agent_details` | Get full details and capabilities of an agent |
-| `invoke_agent` | Invoke a specific agent capability with input data |
+| `invoke_agent` | Invoke a specific agent with input data |
 | `create_task` | Run a multi-step orchestrated task from a goal |
 | `get_task_status` | Poll task status and retrieve results |
+| `list_conversations` | List conversations for the current user |
+| `get_conversation_messages` | Read messages from a conversation |
 
 ### Available Resources
 
