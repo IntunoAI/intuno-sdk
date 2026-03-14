@@ -29,7 +29,7 @@ mcp = FastMCP(
     "Intuno Agent Network",
     instructions=(
         "Discover, invoke, and orchestrate AI agents on the Intuno Agent Network. "
-        "Use these tools to find agents by capability, execute agent functions, "
+        "Use these tools to find agents by description, execute agent functions, "
         "and run multi-step tasks."
     ),
 )
@@ -56,26 +56,15 @@ def _get_client() -> AsyncIntunoClient:
 
 def _agent_summary(agent: Any) -> Dict[str, Any]:
     """Compact JSON-serializable summary of an Agent for tool responses."""
-    caps = []
-    for c in agent.capabilities:
-        cap_info: Dict[str, Any] = {"id": c.id}
-        if c.name:
-            cap_info["name"] = c.name
-        if c.description:
-            cap_info["description"] = c.description
-        if c.input_schema:
-            cap_info["input_schema"] = c.input_schema
-        if c.output_schema:
-            cap_info["output_schema"] = c.output_schema
-        caps.append(cap_info)
-
     summary: Dict[str, Any] = {
         "agent_id": agent.agent_id,
         "name": agent.name,
         "description": agent.description,
-        "version": agent.version,
-        "capabilities": caps,
+        "auth_type": agent.auth_type,
+        "endpoint": agent.endpoint,
     }
+    if agent.input_schema:
+        summary["input_schema"] = agent.input_schema
     if agent.tags:
         summary["tags"] = agent.tags
     if agent.category:
@@ -94,11 +83,11 @@ def _agent_summary(agent: Any) -> Dict[str, Any]:
 async def discover_agents(query: str, limit: int = 5) -> str:
     """Search for AI agents by describing what you need in natural language.
 
-    Returns a list of matching agents with their capabilities and metadata.
+    Returns a list of matching agents with their metadata.
     Use this to find agents before invoking them.
 
     Args:
-        query: Natural language description of the desired capability
+        query: Natural language description of the desired agent
                (e.g. "summarize text", "translate to Spanish", "analyze sentiment").
         limit: Maximum number of agents to return (1-50, default 5).
     """
@@ -113,7 +102,7 @@ async def discover_agents(query: str, limit: int = 5) -> str:
 
 @mcp.tool()
 async def get_agent_details(agent_id: str) -> str:
-    """Get full details of a specific agent including all its capabilities and schemas.
+    """Get full details of a specific agent including its input schema.
 
     Use this after discovering agents to inspect a particular agent's
     input/output schemas before invoking it.
@@ -132,20 +121,18 @@ async def get_agent_details(agent_id: str) -> str:
 @mcp.tool()
 async def invoke_agent(
     agent_id: str,
-    capability_id: str,
     input_data: dict,
     conversation_id: Optional[str] = None,
     message_id: Optional[str] = None,
 ) -> str:
-    """Invoke a specific capability of an agent with the provided input data.
+    """Invoke an agent with the provided input data.
 
     Before calling this, use discover_agents or get_agent_details to find
-    the correct agent_id, capability_id, and required input schema.
+    the correct agent_id and its input_schema.
 
     Args:
         agent_id: The agent ID to invoke.
-        capability_id: The capability ID to execute.
-        input_data: Input data matching the capability's input_schema.
+        input_data: Input data matching the agent's input_schema.
         conversation_id: Optional conversation ID to link this invocation to.
         message_id: Optional message ID within the conversation.
     """
@@ -153,7 +140,6 @@ async def invoke_agent(
     try:
         result = await client.ainvoke(
             agent_id=agent_id,
-            capability_id=capability_id,
             input_data=input_data,
             conversation_id=conversation_id,
             message_id=message_id,

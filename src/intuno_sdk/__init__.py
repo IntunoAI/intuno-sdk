@@ -17,7 +17,6 @@ from intuno_sdk.exceptions import (
 )
 from intuno_sdk.models import (
     Agent,
-    Capability,
     Conversation,
     InvokeResult,
     Message,
@@ -28,7 +27,6 @@ __all__ = [
     "IntunoClient",
     "AsyncIntunoClient",
     "Agent",
-    "Capability",
     "Conversation",
     "InvokeResult",
     "Message",

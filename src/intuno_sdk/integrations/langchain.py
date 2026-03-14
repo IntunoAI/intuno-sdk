@@ -1,7 +1,7 @@
 """
 This module provides integration with the LangChain ecosystem.
 
-It allows converting Intuno Agent Capabilities into LangChain Tools, which can be
+It allows converting Intuno Agents into LangChain Tools, which can be
 used by LangChain agents. It also provides a pre-packaged tool for discovering
 agents on the Intuno Network.
 """
@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Type, Union
 from pydantic import BaseModel, Field, create_model
 
 from intuno_sdk.client import AsyncIntunoClient, IntunoClient
-from intuno_sdk.models import Agent
+from intuno_sdk.models import Agent, agent_id_to_tool_name
 
 try:
     from langchain_core.tools import BaseTool, Tool
@@ -48,11 +48,11 @@ def create_discovery_tool(client: Union[IntunoClient, AsyncIntunoClient]) -> Bas
         for i, agent in enumerate(agents):
             summary += f"\n--- Agent {i + 1} ---\n"
             summary += f"Name: {agent.name}\n"
-            summary += f"ID: {agent.id}\n"
+            summary += f"ID: {agent.agent_id}\n"
             summary += f"Description: {agent.description}\n"
-            summary += "Capabilities:\n"
-            for cap in agent.capabilities:
-                summary += f"  - {cap.display_name}: {cap.description or 'No description'}\n"
+            if agent.input_schema and agent.input_schema.get("properties"):
+                props = ", ".join(agent.input_schema["properties"].keys())
+                summary += f"Accepts: {props}\n"
         return summary
 
     def _run_sync(query: str) -> str:
@@ -98,48 +98,38 @@ def _create_pydantic_model_from_schema(
 
 def make_tools_from_agent(agent: Agent) -> List[Tool]:
     """
-    Converts an agent's capabilities into a list of LangChain Tools.
-
-    This function iterates through the capabilities of a discovered Intuno Agent
-    and wraps each one in a LangChain `Tool` object.
+    Converts an agent into a LangChain Tool.
 
     Args:
         agent: The discovered Agent object.
 
     Returns:
-        A list of LangChain Tool objects, one for each capability.
+        A list with a single LangChain Tool for the agent.
     """
-    tools: List[Tool] = []
-    for capability in agent.capabilities:
-        cap_name = capability.display_name
-        args_schema = _create_pydantic_model_from_schema(
-            schema=capability.input_schema,
-            model_name=f"{cap_name.capitalize()}Input",
-        )
+    schema = agent.input_schema or {}
+    tool_name = agent_id_to_tool_name(agent.agent_id)
+    args_schema = _create_pydantic_model_from_schema(
+        schema=schema,
+        model_name=f"{tool_name.capitalize()}Input",
+    )
 
-        def _run_capability(_cap_name=cap_name, **kwargs):
-            result = agent.invoke(
-                capability_name_or_id=_cap_name, input_data=kwargs
-            )
-            if result.success:
-                return result.data
-            return f"Error during invocation: {result.error}"
+    def _run_agent(**kwargs):
+        result = agent.invoke(input_data=kwargs)
+        if result.success:
+            return result.data
+        return f"Error during invocation: {result.error}"
 
-        async def _arun_capability(_cap_name=cap_name, **kwargs):
-            result = await agent.ainvoke(
-                capability_name_or_id=_cap_name, input_data=kwargs
-            )
-            if result.success:
-                return result.data
-            return f"Error during invocation: {result.error}"
+    async def _arun_agent(**kwargs):
+        result = await agent.ainvoke(input_data=kwargs)
+        if result.success:
+            return result.data
+        return f"Error during invocation: {result.error}"
 
-        tool = Tool(
-            name=cap_name,
-            description=capability.description or cap_name,
-            func=_run_capability,
-            coroutine=_arun_capability,
-            args_schema=args_schema,
-        )
-        tools.append(tool)
-
-    return tools
+    tool = Tool(
+        name=tool_name,
+        description=agent.description,
+        func=_run_agent,
+        coroutine=_arun_agent,
+        args_schema=args_schema,
+    )
+    return [tool]

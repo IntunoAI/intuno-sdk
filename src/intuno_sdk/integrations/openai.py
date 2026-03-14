@@ -1,13 +1,13 @@
 """
 This module provides integration with the OpenAI API.
 
-It allows converting Intuno Agent Capabilities into a format that can be used
+It allows converting Intuno Agents into a format that can be used
 with the OpenAI API's 'tools' parameter.
 """
 
 from typing import Any, Dict, List
 
-from intuno_sdk.models import Agent
+from intuno_sdk.models import Agent, agent_id_to_tool_name
 
 
 def get_discovery_tool_openai_schema() -> Dict[str, Any]:
@@ -43,21 +43,16 @@ def get_discovery_tool_openai_schema() -> Dict[str, Any]:
 
 def make_openai_tools_from_agent(agent: Agent) -> List[Dict[str, Any]]:
     """
-    Converts an agent's capabilities into a list of OpenAI-compatible tools.
+    Converts an agent into an OpenAI-compatible tool definition.
 
-    This function iterates through the capabilities of a discovered Intuno Agent
-    and formats each one into the JSON schema dictionary that the OpenAI API
-    expects for its `tools` parameter.
-
-    This allows an OpenAI-powered model to "know" about the Intuno agent's
-    capabilities and request to call them. The actual invocation would then
-    be handled by your code, using the `agent.invoke()` method.
+    This function formats a discovered Intuno Agent into the JSON schema
+    dictionary that the OpenAI API expects for its `tools` parameter.
 
     Args:
         agent: The discovered Agent object.
 
     Returns:
-        A list of dictionaries, where each dictionary defines a tool in the
+        A list with a single dictionary defining the agent as a tool in the
         format expected by the OpenAI API.
 
     Example:
@@ -73,16 +68,13 @@ def make_openai_tools_from_agent(agent: Agent) -> List[Dict[str, Any]]:
         ...     #     tools=openai_tools,
         ...     # )
     """
-    tools: List[Dict[str, Any]] = []
-    for capability in agent.capabilities:
-        tool_definition = {
-            "type": "function",
-            "function": {
-                "name": capability.display_name,
-                "description": capability.description or capability.display_name,
-                "parameters": capability.input_schema,
-            },
-        }
-        tools.append(tool_definition)
-
-    return tools
+    parameters = agent.input_schema or {"type": "object", "properties": {}}
+    tool_definition = {
+        "type": "function",
+        "function": {
+            "name": agent_id_to_tool_name(agent.agent_id),
+            "description": agent.description,
+            "parameters": parameters,
+        },
+    }
+    return [tool_definition]

@@ -63,19 +63,17 @@ class IntunoClient:
     def invoke(
         self,
         agent_id: str,
-        capability_id: str,
         input_data: Dict[str, Any],
         conversation_id: Optional[str] = None,
         message_id: Optional[str] = None,
         external_user_id: Optional[str] = None,
     ) -> InvokeResult:
         """
-        Invoke an agent's capability.
+        Invoke an agent.
 
         Args:
             agent_id: The ID of the agent to invoke.
-            capability_id: The ID of the capability to use.
-            input_data: A dictionary containing the input for the capability.
+            input_data: A dictionary containing the input for the agent.
             conversation_id: Optional conversation ID to attach this invocation to.
             message_id: Optional message ID within the conversation.
             external_user_id: Optional end-user ID for multi-user apps.
@@ -85,7 +83,6 @@ class IntunoClient:
         """
         payload: Dict[str, Any] = {
             "agent_id": agent_id,
-            "capability_id": capability_id,
             "input": input_data,
         }
         if conversation_id is not None:
@@ -216,7 +213,7 @@ class IntunoClient:
             agent_id: The agent ID (e.g. agent:ns:name:version).
 
         Returns:
-            An Agent object with capabilities and metadata.
+            An Agent object with its metadata.
         """
         try:
             response = self._http_client.get(f"/registry/agents/{agent_id}")
@@ -491,19 +488,17 @@ class AsyncIntunoClient:
     async def ainvoke(
         self,
         agent_id: str,
-        capability_id: str,
         input_data: Dict[str, Any],
         conversation_id: Optional[str] = None,
         message_id: Optional[str] = None,
         external_user_id: Optional[str] = None,
     ) -> InvokeResult:
         """
-        Asynchronously invoke an agent's capability.
+        Asynchronously invoke an agent.
 
         Args:
             agent_id: The ID of the agent to invoke.
-            capability_id: The ID of the capability to use.
-            input_data: A dictionary containing the input for the capability.
+            input_data: A dictionary containing the input for the agent.
             conversation_id: Optional conversation ID to attach this invocation to.
             message_id: Optional message ID within the conversation.
             external_user_id: Optional end-user ID for multi-user apps.
@@ -513,7 +508,6 @@ class AsyncIntunoClient:
         """
         payload: Dict[str, Any] = {
             "agent_id": agent_id,
-            "capability_id": capability_id,
             "input": input_data,
         }
         if conversation_id is not None:
@@ -644,7 +638,7 @@ class AsyncIntunoClient:
             agent_id: The agent ID (e.g. agent:ns:name:version).
 
         Returns:
-            An Agent object with capabilities and metadata.
+            An Agent object with its metadata.
         """
         try:
             response = await self._http_client.get(f"/registry/agents/{agent_id}")
