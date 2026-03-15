@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from pydantic import ValidationError
 
-from intuno_sdk.constants import DEFAULT_BASE_URL
+from intuno_sdk.constants import DEFAULT_BASE_URL, SDK_VERSION
 from intuno_sdk.exceptions import (
     APIKeyMissingError,
     AuthenticationError,
@@ -18,7 +18,12 @@ class IntunoClient:
     The main synchronous client for interacting with the Intuno Agent Network.
     """
 
-    def __init__(self, api_key: str, base_url: str = DEFAULT_BASE_URL):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: float = 30.0,
+    ):
         if not api_key:
             raise APIKeyMissingError()
 
@@ -26,10 +31,11 @@ class IntunoClient:
         self.base_url = base_url
         self._http_client = httpx.Client(
             base_url=self.base_url,
+            timeout=timeout,
             headers={
                 "X-API-Key": self.api_key,
                 "Content-Type": "application/json",
-                "User-Agent": "Intuno-SDK/0.2.0",
+                "User-Agent": f"Intuno-SDK/{SDK_VERSION}",
             },
         )
 
@@ -443,7 +449,12 @@ class AsyncIntunoClient:
     The main asynchronous client for interacting with the Intuno Agent Network.
     """
 
-    def __init__(self, api_key: str, base_url: str = DEFAULT_BASE_URL):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: float = 30.0,
+    ):
         if not api_key:
             raise APIKeyMissingError()
 
@@ -451,10 +462,11 @@ class AsyncIntunoClient:
         self.base_url = base_url
         self._http_client = httpx.AsyncClient(
             base_url=self.base_url,
+            timeout=timeout,
             headers={
                 "X-API-Key": self.api_key,
                 "Content-Type": "application/json",
-                "User-Agent": "Intuno-SDK/0.2.0",
+                "User-Agent": f"Intuno-SDK/{SDK_VERSION}",
             },
         )
 

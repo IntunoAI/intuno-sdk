@@ -1,5 +1,9 @@
 # Intuno Python SDK
 
+[![PyPI](https://img.shields.io/pypi/v/intuno-sdk)](https://pypi.org/project/intuno-sdk/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue)](https://registry.modelcontextprotocol.io/servers/io.github.intunoai/intuno-sdk)
+
 The official Python SDK for the Intuno Agent Network.
 
 ## Installation
@@ -46,11 +50,8 @@ else:
     weather_agent = agents[0]
     print(f"Found agent: {weather_agent.name}")
 
-    # Invoke by capability name
-    result = weather_agent.invoke(
-        capability_name_or_id="get_forecast",
-        input_data={"city": "Paris"}
-    )
+    # Invoke the agent directly
+    result = weather_agent.invoke(input_data={"city": "Paris"})
 
     if result.success:
         print("Invocation successful:", result.data)
@@ -71,10 +72,7 @@ async def main():
         agents = await client.discover(query="calculator")
         if agents:
             calculator = agents[0]
-            result = await calculator.ainvoke(
-                capability_name_or_id="add",
-                input_data={"x": 5, "y": 3}
-            )
+            result = await calculator.ainvoke(input_data={"x": 5, "y": 3})
             print("Async invocation successful:", result.data)
 
 if __name__ == "__main__":
@@ -174,7 +172,7 @@ intuno-mcp --transport sse --port 8080
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `INTUNO_API_KEY` | Yes | - | Your Intuno API key |
-| `INTUNO_BASE_URL` | No | `http://localhost:8000` | Intuno backend URL |
+| `INTUNO_BASE_URL` | No | `https://api.intuno.ai` | Intuno backend URL |
 
 ### Available Tools
 
@@ -182,9 +180,11 @@ intuno-mcp --transport sse --port 8080
 |------|-------------|
 | `discover_agents` | Search for agents by natural-language query |
 | `get_agent_details` | Get full details and capabilities of an agent |
-| `invoke_agent` | Invoke a specific agent capability with input data |
+| `invoke_agent` | Invoke a specific agent with input data |
 | `create_task` | Run a multi-step orchestrated task from a goal |
 | `get_task_status` | Poll task status and retrieve results |
+| `list_conversations` | List conversations for the current user |
+| `get_conversation_messages` | Read messages from a conversation |
 
 ### Available Resources
 
@@ -247,3 +247,5 @@ agents = client.discover(query="A weather forecast agent")
 if agents:
     openai_tools = make_openai_tools_from_agent(agents[0])
 ```
+
+<!-- mcp-name: io.github.intunoai/intuno-sdk -->

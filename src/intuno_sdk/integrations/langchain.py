@@ -6,7 +6,7 @@ used by LangChain agents. It also provides a pre-packaged tool for discovering
 agents on the Intuno Network.
 """
 
-from typing import Any, Dict, List, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field, create_model
 
@@ -76,22 +76,35 @@ def create_discovery_tool(client: Union[IntunoClient, AsyncIntunoClient]) -> Bas
     )
 
 
+_JSON_TYPE_MAP: Dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
 def _create_pydantic_model_from_schema(
     schema: Dict[str, Any], model_name: str
 ) -> Type[BaseModel]:
     """Dynamically creates a Pydantic model from a JSON schema."""
+    required_fields = set(schema.get("required", []))
     fields: Dict[str, Any] = {}
     for prop_name, prop_details in schema.get("properties", {}).items():
-        field_type = str  # Default to string
-        if prop_details.get("type") == "integer":
-            field_type = int
-        elif prop_details.get("type") == "number":
-            field_type = float
-        elif prop_details.get("type") == "boolean":
-            field_type = bool
+        field_type: type = _JSON_TYPE_MAP.get(prop_details.get("type", "string"), str)
+        description = prop_details.get("description")
+        is_required = prop_name in required_fields
+        default_value = prop_details.get("default", ... if is_required else None)
 
-        default_value = prop_details.get("default", ...)
-        fields[prop_name] = (field_type, default_value)
+        if not is_required and default_value is not ...:
+            field_type = Optional[field_type]  # type: ignore[assignment]
+
+        if description:
+            fields[prop_name] = (field_type, Field(default=default_value, description=description))
+        else:
+            fields[prop_name] = (field_type, default_value)
 
     return create_model(model_name, **fields)
 
