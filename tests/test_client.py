@@ -12,6 +12,7 @@ from intuno_sdk.exceptions import (
     InvocationError,
     IntunoError,
 )
+from intuno_sdk.models import WorkflowDef, WorkflowStepDef
 
 # --- Constants ---
 BASE_URL = DEFAULT_BASE_URL
@@ -377,3 +378,238 @@ async def test_async_get_task(async_client: AsyncIntunoClient):
     task = await async_client.get_task("task-uuid-2")
     assert task.status == "completed"
     assert task.result == {"answer": 42}
+
+
+# --- Workflow API ---
+
+MOCK_WORKFLOW_DEF = WorkflowDef(
+    name="test-workflow",
+    steps=[
+        WorkflowStepDef(id="step1", agent="my-agent", input={"prompt": "hello"}),
+    ],
+)
+
+MOCK_WORKFLOW_RESPONSE = {
+    "id": "wf-uuid-1",
+    "name": "test-workflow",
+    "version": 1,
+    "owner_id": "user-uuid-1",
+    "definition": {"name": "test-workflow", "steps": [{"id": "step1", "agent": "my-agent"}]},
+    "triggers": None,
+    "recovery": None,
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z",
+}
+
+MOCK_EXECUTION_RESPONSE = {
+    "id": "exec-uuid-1",
+    "workflow_id": "wf-uuid-1",
+    "status": "running",
+    "trigger_data": {"key": "value"},
+    "context_id": "ctx-uuid-1",
+    "parent_execution_id": None,
+    "started_at": "2026-01-01T00:00:00Z",
+    "completed_at": None,
+    "error": None,
+}
+
+MOCK_PROCESS_TABLE = [
+    {
+        "id": "pe-uuid-1",
+        "execution_id": "exec-uuid-1",
+        "step_id": "step1",
+        "type": "agent",
+        "target_id": "agent-uuid-1",
+        "target_name": "my-agent",
+        "status": "completed",
+        "input": None,
+        "output": {"result": "ok"},
+        "error": None,
+        "attempt": 1,
+        "started_at": "2026-01-01T00:00:00Z",
+        "completed_at": "2026-01-01T00:00:01Z",
+        "duration_ms": 1000,
+        "tokens_used": None,
+        "cost": None,
+    }
+]
+
+
+@respx.mock
+def test_sync_create_workflow(sync_client: IntunoClient):
+    """Test synchronous workflow creation."""
+    respx.post(f"{BASE_URL}/workflows").mock(
+        return_value=Response(201, json=MOCK_WORKFLOW_RESPONSE)
+    )
+
+    wf = sync_client.create_workflow(MOCK_WORKFLOW_DEF)
+    assert wf.id == "wf-uuid-1"
+    assert wf.name == "test-workflow"
+    assert wf.version == 1
+
+
+@respx.mock
+def test_sync_get_workflow(sync_client: IntunoClient):
+    """Test synchronous workflow get."""
+    respx.get(f"{BASE_URL}/workflows/wf-uuid-1").mock(
+        return_value=Response(200, json=MOCK_WORKFLOW_RESPONSE)
+    )
+
+    wf = sync_client.get_workflow("wf-uuid-1")
+    assert wf.id == "wf-uuid-1"
+
+
+@respx.mock
+def test_sync_list_workflows(sync_client: IntunoClient):
+    """Test synchronous workflow listing."""
+    respx.get(f"{BASE_URL}/workflows").mock(
+        return_value=Response(200, json=[MOCK_WORKFLOW_RESPONSE])
+    )
+
+    workflows = sync_client.list_workflows()
+    assert len(workflows) == 1
+    assert workflows[0].name == "test-workflow"
+
+
+@respx.mock
+def test_sync_run_workflow(sync_client: IntunoClient):
+    """Test triggering a workflow execution."""
+    respx.post(f"{BASE_URL}/workflows/wf-uuid-1/run").mock(
+        return_value=Response(201, json=MOCK_EXECUTION_RESPONSE)
+    )
+
+    execution = sync_client.run_workflow("wf-uuid-1", trigger_data={"key": "value"})
+    assert execution.id == "exec-uuid-1"
+    assert execution.status == "running"
+
+
+@respx.mock
+def test_sync_get_execution(sync_client: IntunoClient):
+    """Test getting execution status."""
+    respx.get(f"{BASE_URL}/executions/exec-uuid-1").mock(
+        return_value=Response(200, json=MOCK_EXECUTION_RESPONSE)
+    )
+
+    execution = sync_client.get_execution("exec-uuid-1")
+    assert execution.workflow_id == "wf-uuid-1"
+
+
+@respx.mock
+def test_sync_cancel_execution(sync_client: IntunoClient):
+    """Test cancelling an execution."""
+    cancelled = dict(MOCK_EXECUTION_RESPONSE, status="cancelled")
+    respx.post(f"{BASE_URL}/executions/exec-uuid-1/cancel").mock(
+        return_value=Response(200, json=cancelled)
+    )
+
+    execution = sync_client.cancel_execution("exec-uuid-1")
+    assert execution.status == "cancelled"
+
+
+@respx.mock
+def test_sync_get_process_table(sync_client: IntunoClient):
+    """Test retrieving the process table."""
+    respx.get(f"{BASE_URL}/executions/exec-uuid-1/ps").mock(
+        return_value=Response(200, json=MOCK_PROCESS_TABLE)
+    )
+
+    entries = sync_client.get_process_table("exec-uuid-1")
+    assert len(entries) == 1
+    assert entries[0].step_id == "step1"
+    assert entries[0].status == "completed"
+
+
+@respx.mock
+def test_sync_get_workflow_not_found(sync_client: IntunoClient):
+    """Test that 404 on get_workflow raises IntunoError."""
+    respx.get(f"{BASE_URL}/workflows/bad-id").mock(return_value=Response(404))
+    with pytest.raises(IntunoError):
+        sync_client.get_workflow("bad-id")
+
+
+@respx.mock
+def test_sync_get_execution_not_found(sync_client: IntunoClient):
+    """Test that 404 on get_execution raises IntunoError."""
+    respx.get(f"{BASE_URL}/executions/bad-id").mock(return_value=Response(404))
+    with pytest.raises(IntunoError):
+        sync_client.get_execution("bad-id")
+
+
+# --- Async workflow tests ---
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_create_workflow(async_client: AsyncIntunoClient):
+    """Test async workflow creation."""
+    respx.post(f"{BASE_URL}/workflows").mock(
+        return_value=Response(201, json=MOCK_WORKFLOW_RESPONSE)
+    )
+
+    wf = await async_client.create_workflow(MOCK_WORKFLOW_DEF)
+    assert wf.id == "wf-uuid-1"
+    assert wf.name == "test-workflow"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_run_workflow(async_client: AsyncIntunoClient):
+    """Test async workflow trigger."""
+    respx.post(f"{BASE_URL}/workflows/wf-uuid-1/run").mock(
+        return_value=Response(201, json=MOCK_EXECUTION_RESPONSE)
+    )
+
+    execution = await async_client.run_workflow("wf-uuid-1", trigger_data={"env": "test"})
+    assert execution.id == "exec-uuid-1"
+    assert execution.status == "running"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_get_execution(async_client: AsyncIntunoClient):
+    """Test async execution status polling."""
+    respx.get(f"{BASE_URL}/executions/exec-uuid-1").mock(
+        return_value=Response(200, json=MOCK_EXECUTION_RESPONSE)
+    )
+
+    execution = await async_client.get_execution("exec-uuid-1")
+    assert execution.workflow_id == "wf-uuid-1"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_cancel_execution(async_client: AsyncIntunoClient):
+    """Test async execution cancellation."""
+    cancelled = dict(MOCK_EXECUTION_RESPONSE, status="cancelled")
+    respx.post(f"{BASE_URL}/executions/exec-uuid-1/cancel").mock(
+        return_value=Response(200, json=cancelled)
+    )
+
+    execution = await async_client.cancel_execution("exec-uuid-1")
+    assert execution.status == "cancelled"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_get_process_table(async_client: AsyncIntunoClient):
+    """Test async process table retrieval."""
+    respx.get(f"{BASE_URL}/executions/exec-uuid-1/ps").mock(
+        return_value=Response(200, json=MOCK_PROCESS_TABLE)
+    )
+
+    entries = await async_client.get_process_table("exec-uuid-1")
+    assert len(entries) == 1
+    assert entries[0].step_id == "step1"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_async_list_workflows(async_client: AsyncIntunoClient):
+    """Test async workflow listing."""
+    respx.get(f"{BASE_URL}/workflows").mock(
+        return_value=Response(200, json=[MOCK_WORKFLOW_RESPONSE])
+    )
+
+    workflows = await async_client.list_workflows()
+    assert len(workflows) == 1
+    assert workflows[0].id == "wf-uuid-1"

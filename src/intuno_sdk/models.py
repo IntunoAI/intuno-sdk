@@ -1,5 +1,6 @@
 """Pydantic models for the Intuno SDK."""
 
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 
@@ -125,4 +126,103 @@ class Message(BaseModel):
     role: str  # user | assistant | system | tool
     content: str
     metadata: Optional[Dict[str, Any]] = None
+    agent_id: Optional[str] = None
     created_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Workflow / Execution models
+# ---------------------------------------------------------------------------
+
+
+class WorkflowStepDef(BaseModel):
+    """A single step in a workflow definition."""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    type: Optional[str] = None  # agent | skill | condition | sub_workflow | plan
+    agent: Optional[str] = None
+    skill: Optional[str] = None
+    workflow: Optional[str] = None
+    goal: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    depends_on: List[str] = []
+    parallel_with: Optional[str] = None
+    when: Optional[List[Dict[str, Any]]] = None
+
+
+class WorkflowDef(BaseModel):
+    """Workflow definition payload for create_workflow()."""
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str
+    steps: List[WorkflowStepDef]
+    max_duration_seconds: Optional[int] = None
+    max_concurrent_executions: Optional[int] = None
+    recovery: Optional[Dict[str, Any]] = None
+
+
+class WorkflowResponse(BaseModel):
+    """Response model for a workflow definition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    name: str
+    version: int
+    owner_id: Optional[str] = None
+    definition: Dict[str, Any]
+    triggers: Optional[List[Dict[str, Any]]] = None
+    recovery: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class ExecutionStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+    timed_out = "timed_out"
+
+
+class ProcessEntry(BaseModel):
+    """A single row in the execution process table."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    execution_id: str
+    step_id: str
+    type: str
+    target_id: Optional[str] = None
+    target_name: str
+    status: str
+    input: Optional[Dict[str, Any]] = None
+    output: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    attempt: int = 1
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    duration_ms: Optional[int] = None
+    tokens_used: Optional[int] = None
+    cost: Optional[float] = None
+
+
+class ExecutionResponse(BaseModel):
+    """Response model for a workflow execution."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    workflow_id: str
+    status: str
+    trigger_data: Optional[Dict[str, Any]] = None
+    context_id: str
+    parent_execution_id: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    error: Optional[str] = None
