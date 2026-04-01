@@ -76,6 +76,66 @@ def create_discovery_tool(client: Union[IntunoClient, AsyncIntunoClient]) -> Bas
     )
 
 
+def create_task_tool(client: Union[IntunoClient, AsyncIntunoClient]) -> BaseTool:
+    """
+    Creates a LangChain Tool for delegating tasks to the Intuno orchestrator.
+
+    This tool allows an LLM agent to delegate a goal to the Intuno network.
+    The orchestrator automatically discovers the best agent and executes it,
+    so the LLM only needs to describe the goal in natural language.
+
+    Args:
+        client: An initialized synchronous or asynchronous IntunoClient.
+
+    Returns:
+        A LangChain Tool that can be used by an agent.
+
+    Example:
+        >>> from intuno_sdk.integrations.langchain import create_task_tool
+        >>> tool = create_task_tool(client)
+        >>> result = tool.invoke({"goal": "Get the weather in Mexico City"})
+    """
+
+    class TaskInput(BaseModel):
+        goal: str = Field(
+            description="A natural language description of what needs to be accomplished."
+        )
+
+    def _run_sync(goal: str) -> str:
+        if not isinstance(client, IntunoClient):
+            raise TypeError("A synchronous IntunoClient is required.")
+        task = client.create_task(goal=goal)
+        if task.status == "completed" and task.result:
+            return str(task.result)
+        if task.status == "failed":
+            return f"Task failed: {task.error_message}"
+        return f"Task status: {task.status}"
+
+    async def _arun_async(goal: str) -> str:
+        if not isinstance(client, AsyncIntunoClient):
+            raise TypeError("An asynchronous AsyncIntunoClient is required.")
+        task = await client.create_task(goal=goal)
+        if task.status == "completed" and task.result:
+            return str(task.result)
+        if task.status == "failed":
+            return f"Task failed: {task.error_message}"
+        return f"Task status: {task.status}"
+
+    return Tool(
+        name="intuno_create_task",
+        description=(
+            "Delegates a task to the Intuno agent network. "
+            "Intuno will automatically find the best specialized agent "
+            "and execute it. Use this when you need real-time data, "
+            "web search, external services, calculations, or any "
+            "specialized capability you don't have natively."
+        ),
+        func=_run_sync,
+        coroutine=_arun_async,
+        args_schema=TaskInput,
+    )
+
+
 _JSON_TYPE_MAP: Dict[str, type] = {
     "string": str,
     "integer": int,
