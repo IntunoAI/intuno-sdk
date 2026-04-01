@@ -10,7 +10,17 @@ from intuno_sdk.exceptions import (
     InvocationError,
     IntunoError,
 )
-from intuno_sdk.models import Agent, Conversation, InvokeResult, Message, TaskResult
+from intuno_sdk.models import (
+    Agent,
+    Conversation,
+    ExecutionResponse,
+    InvokeResult,
+    Message,
+    ProcessEntry,
+    TaskResult,
+    WorkflowDef,
+    WorkflowResponse,
+)
 
 
 class IntunoClient:
@@ -406,6 +416,120 @@ class IntunoClient:
                 raise AuthenticationError("Invalid API key.") from e
             if e.response.status_code == 404:
                 raise IntunoError(f"Message '{message_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Workflow management ────────────────────────────────────────────────────
+
+    def create_workflow(self, workflow: WorkflowDef) -> WorkflowResponse:
+        """Create a new workflow definition."""
+        try:
+            response = self._http_client.post(
+                "/workflows", json=workflow.model_dump(exclude_none=True)
+            )
+            response.raise_for_status()
+            return WorkflowResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_workflow(self, workflow_id: str) -> WorkflowResponse:
+        """Get a workflow definition by ID."""
+        try:
+            response = self._http_client.get(f"/workflows/{workflow_id}")
+            response.raise_for_status()
+            return WorkflowResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Workflow '{workflow_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def list_workflows(
+        self,
+        name: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[WorkflowResponse]:
+        """List workflow definitions."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if name is not None:
+            params["name"] = name
+        try:
+            response = self._http_client.get("/workflows", params=params)
+            response.raise_for_status()
+            return [WorkflowResponse(**w) for w in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Execution management ───────────────────────────────────────────────────
+
+    def run_workflow(
+        self, workflow_id: str, trigger_data: Optional[Dict[str, Any]] = None
+    ) -> ExecutionResponse:
+        """Trigger a workflow execution."""
+        try:
+            response = self._http_client.post(
+                f"/workflows/{workflow_id}/run",
+                json={"trigger_data": trigger_data or {}},
+            )
+            response.raise_for_status()
+            return ExecutionResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_execution(self, execution_id: str) -> ExecutionResponse:
+        """Get the current state of a workflow execution."""
+        try:
+            response = self._http_client.get(f"/executions/{execution_id}")
+            response.raise_for_status()
+            return ExecutionResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Execution '{execution_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def cancel_execution(self, execution_id: str) -> ExecutionResponse:
+        """Cancel a running workflow execution."""
+        try:
+            response = self._http_client.post(f"/executions/{execution_id}/cancel")
+            response.raise_for_status()
+            return ExecutionResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_process_table(self, execution_id: str) -> List[ProcessEntry]:
+        """Get the process table for a workflow execution."""
+        try:
+            response = self._http_client.get(f"/executions/{execution_id}/ps")
+            response.raise_for_status()
+            return [ProcessEntry(**e) for e in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
             raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
@@ -834,6 +958,120 @@ class AsyncIntunoClient:
             for agent in agents:
                 agent._client = self
             return agents
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Workflow management ────────────────────────────────────────────────────
+
+    async def create_workflow(self, workflow: WorkflowDef) -> WorkflowResponse:
+        """Create a new workflow definition."""
+        try:
+            response = await self._http_client.post(
+                "/workflows", json=workflow.model_dump(exclude_none=True)
+            )
+            response.raise_for_status()
+            return WorkflowResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_workflow(self, workflow_id: str) -> WorkflowResponse:
+        """Get a workflow definition by ID."""
+        try:
+            response = await self._http_client.get(f"/workflows/{workflow_id}")
+            response.raise_for_status()
+            return WorkflowResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Workflow '{workflow_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def list_workflows(
+        self,
+        name: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[WorkflowResponse]:
+        """List workflow definitions."""
+        params: Dict[str, Any] = {"limit": limit, "offset": offset}
+        if name is not None:
+            params["name"] = name
+        try:
+            response = await self._http_client.get("/workflows", params=params)
+            response.raise_for_status()
+            return [WorkflowResponse(**w) for w in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Execution management ───────────────────────────────────────────────────
+
+    async def run_workflow(
+        self, workflow_id: str, trigger_data: Optional[Dict[str, Any]] = None
+    ) -> ExecutionResponse:
+        """Trigger a workflow execution."""
+        try:
+            response = await self._http_client.post(
+                f"/workflows/{workflow_id}/run",
+                json={"trigger_data": trigger_data or {}},
+            )
+            response.raise_for_status()
+            return ExecutionResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_execution(self, execution_id: str) -> ExecutionResponse:
+        """Get the current state of a workflow execution."""
+        try:
+            response = await self._http_client.get(f"/executions/{execution_id}")
+            response.raise_for_status()
+            return ExecutionResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Execution '{execution_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def cancel_execution(self, execution_id: str) -> ExecutionResponse:
+        """Cancel a running workflow execution."""
+        try:
+            response = await self._http_client.post(f"/executions/{execution_id}/cancel")
+            response.raise_for_status()
+            return ExecutionResponse(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_process_table(self, execution_id: str) -> List[ProcessEntry]:
+        """Get the process table for a workflow execution."""
+        try:
+            response = await self._http_client.get(f"/executions/{execution_id}/ps")
+            response.raise_for_status()
+            return [ProcessEntry(**e) for e in response.json()]
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("Invalid API key.") from e

@@ -50,11 +50,12 @@ else:
     weather_agent = agents[0]
     print(f"Found agent: {weather_agent.name}")
 
-    # Invoke the agent directly
+    # Invoke the agent (auto-creates a conversation)
     result = weather_agent.invoke(input_data={"city": "Paris"})
 
     if result.success:
         print("Invocation successful:", result.data)
+        print("Conversation ID:", result.conversation_id)  # save to continue the chat
     else:
         print("Invocation failed:", result.error)
 ```
@@ -74,10 +75,148 @@ async def main():
             calculator = agents[0]
             result = await calculator.ainvoke(input_data={"x": 5, "y": 3})
             print("Async invocation successful:", result.data)
+            print("Conversation ID:", result.conversation_id)  # save to continue the chat
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
+
+## Conversations & Chat History
+
+Intuno fully manages conversations on your behalf. You never create conversations directly — they are automatically created when you invoke an agent. This gives you built-in chat history, message persistence, and multi-user support without managing any conversation state yourself.
+
+### How It Works
+
+The typical flow combines **agent discovery** with **conversation management**. Your app doesn't need to know which agent to call — Intuno finds the best agent for each message automatically using semantic search:
+
+1. **Discover** — Call `discover(query=...)` with the user's message. Intuno uses semantic search to find the best-matching agent from the network.
+2. **Invoke** — Call `invoke()` or `ainvoke()` on the discovered agent. If no `conversation_id` is provided, Intuno creates a new conversation automatically and returns its ID.
+3. **Continue** — For follow-up messages, pass the returned `conversation_id` to keep messages in the same thread.
+4. **Retrieve** — Use `list_conversations()` and `get_messages()` to load chat history at any time.
+
+Your end users never see or choose an agent. From their perspective, they're just chatting — Intuno handles the routing behind the scenes.
+
+### Identifying Your Users with `external_user_id`
+
+If your application has its own users (e.g., a mobile app, a SaaS platform), use the `external_user_id` parameter to tag conversations with your user identifiers. This lets you:
+
+- Query all conversations belonging to a specific user in your system
+- Keep a clean separation between your users without creating Intuno accounts for each one
+- Support multi-tenant chat history from a single Intuno integration
+
+`external_user_id` is an opaque string — use whatever identifier your app already has (database ID, Firebase UID, etc.).
+
+### Example: Chat App Integration
+
+This example shows the typical pattern for integrating a chat application (iOS, Android, web) with Intuno. The key idea is **discover + invoke** — the SDK finds the right agent for each message automatically.
+
+```python
+from intuno_sdk import AsyncIntunoClient
+
+client = AsyncIntunoClient(api_key="wsk_...")
+
+async def handle_user_message(
+    user_message: str,
+    user_id: str,
+    conversation_id: str | None = None,
+) -> dict:
+    """
+    Handle a chat message from your app.
+    - Discovers the best agent for the message via semantic search
+    - Invokes it (auto-creates a conversation on first message)
+    - Returns the agent's reply and the conversation_id for follow-ups
+    """
+
+    # 1. Discover the best agent for this message
+    agents = await client.discover(query=user_message)
+    if not agents:
+        return {"reply": "No agent available", "conversation_id": conversation_id}
+
+    # 2. Invoke the top match
+    kwargs = {
+        "input_data": {"query": user_message},
+        "external_user_id": user_id,      # your app's user ID
+    }
+    if conversation_id:
+        kwargs["conversation_id"] = conversation_id  # continue existing thread
+
+    result = await agents[0].ainvoke(**kwargs)
+
+    return {
+        "reply": result.data,
+        "conversation_id": result.conversation_id,  # save for follow-ups
+    }
+
+
+# -----------------------------------------------
+# First message — discovers agent, creates conversation
+# -----------------------------------------------
+resp = await handle_user_message(
+    user_message="I need help with my order",
+    user_id="user_abc123",
+)
+# resp["conversation_id"] is now set — store it on the client side
+
+# -----------------------------------------------
+# Follow-up — discovers agent again (may be same or different),
+# continues the same conversation thread
+# -----------------------------------------------
+resp = await handle_user_message(
+    user_message="Order #12345",
+    user_id="user_abc123",
+    conversation_id=resp["conversation_id"],
+)
+
+# -----------------------------------------------
+# Load conversation list (e.g., chat history screen)
+# -----------------------------------------------
+conversations = await client.list_conversations(external_user_id="user_abc123")
+
+for conv in conversations:
+    print(f"{conv.id} — {conv.title} — {conv.created_at}")
+
+# -----------------------------------------------
+# Load messages for a conversation (e.g., user taps a chat)
+# -----------------------------------------------
+messages = await client.get_messages(conversation_id=resp["conversation_id"])
+
+for msg in messages:
+    print(f"[{msg.role}] {msg.content}")
+```
+
+### Direct Invoke (Pinned Agent)
+
+If you already know which agent should handle your chat (e.g., you registered a brand agent), you can skip discovery and call `invoke()` directly with the `agent_id`:
+
+```python
+result = client.invoke(
+    agent_id="agent:mycompany:support-bot:latest",
+    input_data={"message": "Hello!"},
+    external_user_id="user_abc123",
+)
+```
+
+This is useful when your app is backed by a single, known agent. The conversation lifecycle works exactly the same — pass `conversation_id` for follow-ups, use `external_user_id` to track your users.
+
+### Conversation API Reference
+
+| Method | Description |
+|--------|-------------|
+| `discover(query=...)` | Find the best agent for a message via semantic search |
+| `invoke()` / `ainvoke()` | Invoke an agent (auto-creates conversation if none provided) |
+| `list_conversations(external_user_id=...)` | List all conversations for a specific user |
+| `get_conversation(conversation_id)` | Get a single conversation by ID |
+| `get_messages(conversation_id, limit, offset)` | Paginate through messages in a conversation |
+| `get_message(conversation_id, message_id)` | Get a specific message |
+
+### Key Concepts
+
+- **Agent discovery is automatic** — `discover()` uses semantic search to match the user's message to the best agent in the network. Your app never needs to hardcode agent IDs.
+- **Multi-agent conversations** — A single conversation can involve multiple agents. Each follow-up message can be routed to a different agent via `discover()`. Every assistant message includes an `agent_id` field so you can tell which agent produced each response.
+- **Conversations are owned by the integration** (API key) that created them. Each API key only sees its own conversations.
+- **`external_user_id` is not an Intuno user** — it's a label you attach so you can filter conversations by your own user identifiers.
+- **Messages are created automatically** — when you call `invoke()`, Intuno stores both the user input and the agent's response as messages in the conversation. Assistant messages are tagged with the `agent_id` that generated them.
+- **Conversation IDs are UUIDs** generated by Intuno. Your app should store the `conversation_id` returned from the first `invoke()` call to continue the thread later.
 
 ## MCP Server
 
