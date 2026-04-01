@@ -41,6 +41,57 @@ def get_discovery_tool_openai_schema() -> Dict[str, Any]:
     }
 
 
+def get_task_tool_openai_schema() -> Dict[str, Any]:
+    """
+    Returns the OpenAI tool schema for the Intuno create_task orchestrator.
+
+    This provides a static definition for a tool that delegates a task to the
+    Intuno agent network. The orchestrator automatically discovers the best
+    agent and executes it, so the LLM only needs to describe the goal in
+    natural language.
+
+    The developer is responsible for handling the actual tool call by taking
+    the ``goal`` argument and passing it to ``client.create_task(goal=...)``.
+
+    Returns:
+        A dictionary defining the task tool in the format expected
+        by the OpenAI API.
+
+    Example:
+        >>> from intuno_sdk.integrations.openai import get_task_tool_openai_schema
+        >>> tool = get_task_tool_openai_schema()
+        >>> # Pass to any OpenAI-compatible API
+        >>> response = openai_client.chat.completions.create(
+        ...     model="gpt-4",
+        ...     messages=[{"role": "user", "content": "What's the weather?"}],
+        ...     tools=[tool],
+        ... )
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": "intuno_create_task",
+            "description": (
+                "Delegates a task to the Intuno agent network. "
+                "Intuno will automatically find the best specialized agent "
+                "and execute it. Use this when you need real-time data, "
+                "web search, external services, calculations, or any "
+                "specialized capability you don't have natively."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {
+                        "type": "string",
+                        "description": "A natural language description of what needs to be accomplished.",
+                    }
+                },
+                "required": ["goal"],
+            },
+        },
+    }
+
+
 def make_openai_tools_from_agent(agent: Agent) -> List[Dict[str, Any]]:
     """
     Converts an agent into an OpenAI-compatible tool definition.

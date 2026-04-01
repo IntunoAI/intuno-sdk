@@ -6,10 +6,12 @@ import pytest
 
 from intuno_sdk.integrations.langchain import (
     create_discovery_tool,
+    create_task_tool,
     make_tools_from_agent,
 )
 from intuno_sdk.integrations.openai import (
     get_discovery_tool_openai_schema,
+    get_task_tool_openai_schema,
     make_openai_tools_from_agent,
 )
 from intuno_sdk.models import Agent, Capability
@@ -43,6 +45,24 @@ def mock_agent():
 
 
 # --- LangChain Integration Tests ---
+
+
+def test_create_task_tool():
+    """Test the creation of the LangChain create_task tool."""
+    mock_client = MagicMock()
+    mock_task = MagicMock()
+    mock_task.status = "completed"
+    mock_task.result = {"answer": "21°C"}
+    mock_task.error_message = None
+    mock_client.create_task.return_value = mock_task
+
+    tool = create_task_tool(mock_client)
+    assert tool.name == "intuno_create_task"
+    assert "Delegates a task" in tool.description
+
+    result = tool.func(goal="Get the weather in CDMX")
+    mock_client.create_task.assert_called_once_with(goal="Get the weather in CDMX")
+    assert "21°C" in result
 
 
 def test_create_discovery_tool():
@@ -79,6 +99,17 @@ def test_make_tools_from_agent(mock_agent: Agent):
 
 
 # --- OpenAI Integration Tests ---
+
+
+def test_get_task_tool_openai_schema():
+    """Test the generation of the OpenAI create_task tool schema."""
+    schema = get_task_tool_openai_schema()
+
+    assert schema["type"] == "function"
+    assert schema["function"]["name"] == "intuno_create_task"
+    assert "goal" in schema["function"]["parameters"]["properties"]
+    assert "goal" in schema["function"]["parameters"]["required"]
+    assert "Delegates a task" in schema["function"]["description"]
 
 
 def test_get_discovery_tool_openai_schema():
