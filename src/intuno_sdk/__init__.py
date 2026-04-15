@@ -18,9 +18,13 @@ from intuno_sdk.exceptions import (
 )
 from intuno_sdk.models import (
     Agent,
+    CallResult,
     Conversation,
     InvokeResult,
     Message,
+    Network,
+    NetworkMessage,
+    NetworkParticipant,
     TaskResult,
 )
 
@@ -29,9 +33,13 @@ __all__ = [
     "IntunoClient",
     "AsyncIntunoClient",
     "Agent",
+    "CallResult",
     "Conversation",
     "InvokeResult",
     "Message",
+    "Network",
+    "NetworkMessage",
+    "NetworkParticipant",
     "TaskResult",
     "IntunoError",
     "APIKeyMissingError",

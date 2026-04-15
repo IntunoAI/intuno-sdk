@@ -12,10 +12,14 @@ from intuno_sdk.exceptions import (
 )
 from intuno_sdk.models import (
     Agent,
+    CallResult,
     Conversation,
     ExecutionResponse,
     InvokeResult,
     Message,
+    Network,
+    NetworkMessage,
+    NetworkParticipant,
     ProcessEntry,
     TaskResult,
     WorkflowDef,
@@ -1078,6 +1082,259 @@ class AsyncIntunoClient:
             raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Network Communication ──────────────────────────────────────
+
+    async def create_network(
+        self,
+        name: str,
+        topology: str = "mesh",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Network:
+        """Create a communication network."""
+        try:
+            response = await self._http_client.post(
+                "/networks",
+                json={"name": name, "topology_type": topology, "metadata": metadata or {}},
+            )
+            response.raise_for_status()
+            return Network(**self._norm_network(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Failed to create network: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def list_networks(self, limit: int = 50) -> List[Network]:
+        """List networks owned by the current user."""
+        try:
+            response = await self._http_client.get(
+                "/networks", params={"limit": limit}
+            )
+            response.raise_for_status()
+            return [Network(**self._norm_network(n)) for n in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def join_network(
+        self,
+        network_id: str,
+        name: str,
+        participant_type: str = "agent",
+        agent_id: Optional[str] = None,
+        callback_url: Optional[str] = None,
+        polling_enabled: bool = False,
+    ) -> NetworkParticipant:
+        """Join a network as a participant."""
+        body: Dict[str, Any] = {
+            "participant_type": participant_type,
+            "name": name,
+            "polling_enabled": polling_enabled,
+        }
+        if agent_id:
+            body["agent_id"] = agent_id
+        if callback_url:
+            body["callback_url"] = callback_url
+        try:
+            response = await self._http_client.post(
+                f"/networks/{network_id}/participants", json=body
+            )
+            response.raise_for_status()
+            return NetworkParticipant(**self._norm_participant(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Failed to join network: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def list_participants(self, network_id: str) -> List[NetworkParticipant]:
+        """List participants in a network."""
+        try:
+            response = await self._http_client.get(
+                f"/networks/{network_id}/participants"
+            )
+            response.raise_for_status()
+            return [NetworkParticipant(**self._norm_participant(p)) for p in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def network_call(
+        self,
+        network_id: str,
+        sender_participant_id: str,
+        recipient_participant_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> CallResult:
+        """Make a synchronous call to another participant (blocks until response)."""
+        body: Dict[str, Any] = {
+            "sender_participant_id": sender_participant_id,
+            "recipient_participant_id": recipient_participant_id,
+            "content": content,
+        }
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            response = await self._http_client.post(
+                f"/networks/{network_id}/call", json=body
+            )
+            response.raise_for_status()
+            return CallResult(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Network call failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def network_send(
+        self,
+        network_id: str,
+        sender_participant_id: str,
+        recipient_participant_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> NetworkMessage:
+        """Send an async message to another participant."""
+        body: Dict[str, Any] = {
+            "sender_participant_id": sender_participant_id,
+            "recipient_participant_id": recipient_participant_id,
+            "content": content,
+        }
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            response = await self._http_client.post(
+                f"/networks/{network_id}/messages/send", json=body
+            )
+            response.raise_for_status()
+            return NetworkMessage(**self._norm_net_msg(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Send failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def network_messages(
+        self,
+        network_id: str,
+        limit: int = 50,
+        channel_type: Optional[str] = None,
+    ) -> List[NetworkMessage]:
+        """List messages in a network."""
+        params: Dict[str, Any] = {"limit": limit}
+        if channel_type:
+            params["channel_type"] = channel_type
+        try:
+            response = await self._http_client.get(
+                f"/networks/{network_id}/messages", params=params
+            )
+            response.raise_for_status()
+            return [NetworkMessage(**self._norm_net_msg(m)) for m in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def ensure_network(
+        self,
+        caller_name: str,
+        target_name: str,
+        caller_type: str = "agent",
+        target_agent_id: Optional[str] = None,
+        callback_base_url: Optional[str] = None,
+    ) -> tuple:
+        """Get or create a private network between two participants.
+
+        Returns (network_id, caller_participant_id, target_participant_id).
+        """
+        network_name = f"private-{caller_name}-{target_name}"
+        networks = await self.list_networks(limit=200)
+
+        for net in networks:
+            if net.name == network_name and net.status == "active":
+                participants = await self.list_participants(net.id)
+                caller_pid = None
+                target_pid = None
+                for p in participants:
+                    if p.name == caller_name and p.status == "active":
+                        caller_pid = p.id
+                    elif p.name == target_name and p.status == "active":
+                        target_pid = p.id
+                if caller_pid and target_pid:
+                    return net.id, caller_pid, target_pid
+
+        # Create new
+        net = await self.create_network(
+            name=network_name,
+            metadata={"purpose": f"Channel: {caller_name} <-> {target_name}", "auto_created": True},
+        )
+
+        # Join caller
+        caller_kwargs: Dict[str, Any] = {"participant_type": caller_type}
+        if caller_type == "agent" and callback_base_url:
+            caller_kwargs["callback_url"] = f"{callback_base_url}/agents/{caller_name}/callback"
+        elif caller_type == "persona":
+            caller_kwargs["polling_enabled"] = True
+        caller_p = await self.join_network(net.id, caller_name, **caller_kwargs)
+
+        # Join target
+        target_kwargs: Dict[str, Any] = {"participant_type": "agent"}
+        if target_agent_id:
+            target_kwargs["agent_id"] = target_agent_id
+        if callback_base_url:
+            target_kwargs["callback_url"] = f"{callback_base_url}/agents/{target_name}/callback"
+        target_p = await self.join_network(net.id, target_name, **target_kwargs)
+
+        return net.id, caller_p.id, target_p.id
+
+    # ── Normalizers ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _norm_network(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        for k in ("id", "owner_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_participant(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        for k in ("id", "network_id", "agent_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_net_msg(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        for k in ("id", "network_id", "sender_participant_id", "recipient_participant_id", "in_reply_to_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
 
     async def close(self):
         """Closes the underlying HTTP client."""
