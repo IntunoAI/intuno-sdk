@@ -27,6 +27,20 @@ from intuno_sdk.models import (
 )
 
 
+def _build_auth_headers(api_key: str) -> dict:
+    """Build auth headers, supporting both API keys and JWT bearer tokens."""
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": f"Intuno-SDK/{SDK_VERSION}",
+    }
+    # JWT tokens start with 'eyJ' (base64-encoded JSON header)
+    if api_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        headers["X-API-Key"] = api_key
+    return headers
+
+
 class IntunoClient:
     """
     The main synchronous client for interacting with the Intuno Agent Network.
@@ -46,11 +60,7 @@ class IntunoClient:
         self._http_client = httpx.Client(
             base_url=self.base_url,
             timeout=timeout,
-            headers={
-                "X-API-Key": self.api_key,
-                "Content-Type": "application/json",
-                "User-Agent": f"Intuno-SDK/{SDK_VERSION}",
-            },
+            headers=_build_auth_headers(api_key),
         )
 
     def discover(self, query: str, limit: int = 10) -> List[Agent]:
@@ -591,11 +601,7 @@ class AsyncIntunoClient:
         self._http_client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=timeout,
-            headers={
-                "X-API-Key": self.api_key,
-                "Content-Type": "application/json",
-                "User-Agent": f"Intuno-SDK/{SDK_VERSION}",
-            },
+            headers=_build_auth_headers(api_key),
         )
 
     async def discover(self, query: str, limit: int = 10) -> List[Agent]:
