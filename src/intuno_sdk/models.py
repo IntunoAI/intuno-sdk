@@ -226,3 +226,69 @@ class ExecutionResponse(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Network / Multi-directional Communication models
+# ---------------------------------------------------------------------------
+
+
+class Network(BaseModel):
+    """Represents an Intuno communication network."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    name: str
+    topology_type: str = "mesh"
+    status: str = "active"
+    owner_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class NetworkParticipant(BaseModel):
+    """A participant in a communication network."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    network_id: str
+    agent_id: Optional[str] = None
+    participant_type: str = "agent"  # agent | persona | orchestrator
+    name: str
+    callback_url: Optional[str] = None
+    polling_enabled: bool = False
+    capabilities: Optional[Dict[str, Any]] = None
+    status: str = "active"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class NetworkMessage(BaseModel):
+    """A message in a communication network."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    network_id: str
+    sender_participant_id: Optional[str] = None
+    recipient_participant_id: Optional[str] = None
+    channel_type: str = "message"  # call | message | mailbox
+    content: str
+    metadata_: Optional[Dict[str, Any]] = None
+    status: str = "pending"
+    in_reply_to_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class CallResult(BaseModel):
+    """Result of a synchronous network call."""
+
+    model_config = ConfigDict(extra="allow")
+
+    success: bool
+    message_id: Optional[str] = None
+    response: Optional[Any] = None
