@@ -236,6 +236,60 @@ def get_network_tools() -> List[Dict[str, Any]]:
     ]
 
 
+def get_a2a_tools() -> List[Dict[str, Any]]:
+    """Return OpenAI tool definitions for A2A agent import.
+
+    Lets an LLM import any A2A-compatible external agent into the Intuno
+    network at runtime. Once imported, the agent is discoverable and
+    invocable like any native agent. Pair with ``execute_network_tool``
+    to handle the tool calls.
+    """
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "intuno_preview_a2a_card",
+                "description": (
+                    "Preview an external A2A agent's Agent Card without importing it. "
+                    "Use this to inspect the agent's capabilities, skills, and endpoints "
+                    "before deciding to import."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "Base URL of the A2A-compatible agent.",
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "intuno_import_a2a_agent",
+                "description": (
+                    "Import an external A2A-compatible agent into the Intuno network. "
+                    "The agent is registered, indexed for semantic discovery, and becomes "
+                    "invocable like any native agent."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "Base URL of the A2A-compatible agent.",
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
+        },
+    ]
+
+
 async def execute_network_tool(
     client: "AsyncIntunoClient",
     tool_name: str,
@@ -327,6 +381,22 @@ async def execute_network_tool(
             "success": result.success,
             "agent": target_name,
             "response": str(response),
+        }
+
+    if tool_name == "intuno_preview_a2a_card":
+        card = await client.preview_a2a_card(url=args["url"])
+        return {"card": card}
+
+    if tool_name == "intuno_import_a2a_agent":
+        try:
+            agent = await client.import_a2a_agent(url=args["url"])
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+        return {
+            "success": True,
+            "agent_id": agent.agent_id,
+            "name": agent.name,
+            "description": agent.description[:200] if agent.description else "",
         }
 
     if tool_name == "intuno_send_message":
