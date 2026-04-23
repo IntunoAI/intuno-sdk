@@ -292,3 +292,25 @@ class CallResult(BaseModel):
     success: bool
     message_id: Optional[str] = None
     response: Optional[Any] = None
+
+
+class ContextEntry(BaseModel):
+    """A single entry in a network's shared context history."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    sender: str
+    recipient: Optional[str] = None
+    channel: str
+    content: str
+    message_id: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class NetworkContext(BaseModel):
+    """Shared context snapshot for a network."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    network_id: str
+    entries: List[ContextEntry] = []

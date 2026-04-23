@@ -13,11 +13,13 @@ from intuno_sdk.exceptions import (
 from intuno_sdk.models import (
     Agent,
     CallResult,
+    ContextEntry,
     Conversation,
     ExecutionResponse,
     InvokeResult,
     Message,
     Network,
+    NetworkContext,
     NetworkMessage,
     NetworkParticipant,
     ProcessEntry,
@@ -547,6 +549,457 @@ class IntunoClient:
             raise IntunoError(f"API request failed: {e.response.text}") from e
         except (httpx.RequestError, ValidationError) as e:
             raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Network Communication ──────────────────────────────────────
+
+    def create_network(
+        self,
+        name: str,
+        topology: str = "mesh",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Network:
+        """Create a communication network."""
+        try:
+            response = self._http_client.post(
+                "/networks",
+                json={"name": name, "topology_type": topology, "metadata": metadata or {}},
+            )
+            response.raise_for_status()
+            return Network(**self._norm_network(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Failed to create network: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def list_networks(self, limit: int = 50) -> List[Network]:
+        """List networks owned by the current user."""
+        try:
+            response = self._http_client.get("/networks", params={"limit": limit})
+            response.raise_for_status()
+            return [Network(**self._norm_network(n)) for n in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_network(self, network_id: str) -> Network:
+        """Get a network by ID."""
+        try:
+            response = self._http_client.get(f"/networks/{network_id}")
+            response.raise_for_status()
+            return Network(**self._norm_network(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Network '{network_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def delete_network(self, network_id: str) -> None:
+        """Delete a network. Only the owner can delete."""
+        try:
+            response = self._http_client.delete(f"/networks/{network_id}")
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Network '{network_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def join_network(
+        self,
+        network_id: str,
+        name: str,
+        participant_type: str = "agent",
+        agent_id: Optional[str] = None,
+        callback_url: Optional[str] = None,
+        polling_enabled: bool = False,
+    ) -> NetworkParticipant:
+        """Join a network as a participant."""
+        body: Dict[str, Any] = {
+            "participant_type": participant_type,
+            "name": name,
+            "polling_enabled": polling_enabled,
+        }
+        if agent_id:
+            body["agent_id"] = agent_id
+        if callback_url:
+            body["callback_url"] = callback_url
+        try:
+            response = self._http_client.post(
+                f"/networks/{network_id}/participants", json=body
+            )
+            response.raise_for_status()
+            return NetworkParticipant(**self._norm_participant(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Failed to join network: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def list_participants(self, network_id: str) -> List[NetworkParticipant]:
+        """List participants in a network."""
+        try:
+            response = self._http_client.get(f"/networks/{network_id}/participants")
+            response.raise_for_status()
+            return [NetworkParticipant(**self._norm_participant(p)) for p in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def leave_network(self, network_id: str, participant_id: str) -> None:
+        """Remove a participant from a network."""
+        try:
+            response = self._http_client.delete(
+                f"/networks/{network_id}/participants/{participant_id}"
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Participant '{participant_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def network_call(
+        self,
+        network_id: str,
+        sender_participant_id: str,
+        recipient_participant_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> CallResult:
+        """Make a synchronous call to another participant (blocks until response)."""
+        body: Dict[str, Any] = {
+            "sender_participant_id": sender_participant_id,
+            "recipient_participant_id": recipient_participant_id,
+            "content": content,
+        }
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            response = self._http_client.post(
+                f"/networks/{network_id}/call", json=body
+            )
+            response.raise_for_status()
+            return CallResult(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Network call failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def network_send(
+        self,
+        network_id: str,
+        sender_participant_id: str,
+        recipient_participant_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> NetworkMessage:
+        """Send an async message to another participant."""
+        body: Dict[str, Any] = {
+            "sender_participant_id": sender_participant_id,
+            "recipient_participant_id": recipient_participant_id,
+            "content": content,
+        }
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            response = self._http_client.post(
+                f"/networks/{network_id}/messages/send", json=body
+            )
+            response.raise_for_status()
+            return NetworkMessage(**self._norm_net_msg(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Send failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def network_messages(
+        self,
+        network_id: str,
+        limit: int = 50,
+        channel_type: Optional[str] = None,
+    ) -> List[NetworkMessage]:
+        """List messages in a network."""
+        params: Dict[str, Any] = {"limit": limit}
+        if channel_type:
+            params["channel_type"] = channel_type
+        try:
+            response = self._http_client.get(
+                f"/networks/{network_id}/messages", params=params
+            )
+            response.raise_for_status()
+            return [NetworkMessage(**self._norm_net_msg(m)) for m in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def send_to_mailbox(
+        self,
+        network_id: str,
+        sender_participant_id: str,
+        recipient_participant_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> NetworkMessage:
+        """Send a mailbox message (stored without push delivery; recipient polls via get_inbox)."""
+        body: Dict[str, Any] = {
+            "sender_participant_id": sender_participant_id,
+            "recipient_participant_id": recipient_participant_id,
+            "content": content,
+        }
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            response = self._http_client.post(
+                f"/networks/{network_id}/mailbox", json=body
+            )
+            response.raise_for_status()
+            return NetworkMessage(**self._norm_net_msg(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Mailbox send failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_inbox(
+        self,
+        network_id: str,
+        participant_id: str,
+        channel_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[NetworkMessage]:
+        """Poll inbox for a participant. Returns unread messages only."""
+        params: Dict[str, Any] = {"limit": limit}
+        if channel_type:
+            params["channel_type"] = channel_type
+        try:
+            response = self._http_client.get(
+                f"/networks/{network_id}/inbox/{participant_id}", params=params
+            )
+            response.raise_for_status()
+            return [NetworkMessage(**self._norm_net_msg(m)) for m in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def acknowledge_messages(
+        self, network_id: str, message_ids: List[str]
+    ) -> int:
+        """Mark messages as read. Returns the number actually acknowledged."""
+        try:
+            response = self._http_client.post(
+                f"/networks/{network_id}/messages/ack",
+                json={"message_ids": message_ids},
+            )
+            response.raise_for_status()
+            return int(response.json().get("acknowledged", 0))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Ack failed: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def get_network_context(
+        self, network_id: str, limit: int = 50
+    ) -> NetworkContext:
+        """Read the shared context of a network (recent messages, ordered)."""
+        try:
+            response = self._http_client.get(
+                f"/networks/{network_id}/context", params={"limit": limit}
+            )
+            response.raise_for_status()
+            data = response.json()
+            entries = [ContextEntry(**self._norm_context_entry(e)) for e in data.get("entries", [])]
+            return NetworkContext(network_id=str(data.get("network_id", network_id)), entries=entries)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def ensure_network(
+        self,
+        caller_name: str,
+        target_name: str,
+        caller_type: str = "agent",
+        target_agent_id: Optional[str] = None,
+        callback_base_url: Optional[str] = None,
+    ) -> tuple:
+        """Get or create a private network between two participants.
+
+        Returns (network_id, caller_participant_id, target_participant_id).
+        """
+        network_name = f"private-{caller_name}-{target_name}"
+        networks = self.list_networks(limit=200)
+
+        for net in networks:
+            if net.name == network_name and net.status == "active":
+                participants = self.list_participants(net.id)
+                caller_pid = None
+                target_pid = None
+                for p in participants:
+                    if p.name == caller_name and p.status == "active":
+                        caller_pid = p.id
+                    elif p.name == target_name and p.status == "active":
+                        target_pid = p.id
+                if caller_pid and target_pid:
+                    return net.id, caller_pid, target_pid
+
+        net = self.create_network(
+            name=network_name,
+            metadata={"purpose": f"Channel: {caller_name} <-> {target_name}", "auto_created": True},
+        )
+
+        caller_kwargs: Dict[str, Any] = {"participant_type": caller_type}
+        if caller_type == "agent" and callback_base_url:
+            caller_kwargs["callback_url"] = f"{callback_base_url}/agents/{caller_name}/callback"
+        elif caller_type == "persona":
+            caller_kwargs["polling_enabled"] = True
+        caller_p = self.join_network(net.id, caller_name, **caller_kwargs)
+
+        target_kwargs: Dict[str, Any] = {"participant_type": "agent"}
+        if target_agent_id:
+            target_kwargs["agent_id"] = target_agent_id
+        if callback_base_url:
+            target_kwargs["callback_url"] = f"{callback_base_url}/agents/{target_name}/callback"
+        target_p = self.join_network(net.id, target_name, **target_kwargs)
+
+        return net.id, caller_p.id, target_p.id
+
+    # ── A2A agent import ─────────────────────────────────────────────
+
+    def preview_a2a_card(self, url: str) -> Dict[str, Any]:
+        """Fetch an A2A Agent Card from a URL without importing it."""
+        try:
+            response = self._http_client.get(
+                "/a2a/agents/fetch-card", params={"url": url}
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise IntunoError(data.get("error", "Failed to fetch Agent Card"))
+            return data.get("card", {})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Failed to fetch card: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def import_a2a_agent(self, url: str) -> Agent:
+        """Import an external A2A agent by URL.
+
+        Fetches the Agent Card, registers the agent, and indexes it for
+        semantic discovery. The returned ``Agent`` is fully discoverable
+        via ``discover()`` and invocable via ``invoke()``.
+        """
+        try:
+            response = self._http_client.post(
+                "/a2a/agents/import", json={"url": url}
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise IntunoError(data.get("error", "Import failed"))
+            return self.get_agent(data["agent_id"])
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"A2A import failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    def refresh_a2a_agent(self, agent_id: str) -> Agent:
+        """Re-fetch an imported A2A agent's card and update its registry entry."""
+        try:
+            response = self._http_client.post(f"/a2a/agents/{agent_id}/refresh")
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise IntunoError(data.get("error", "Refresh failed"))
+            return self.get_agent(data["agent_id"])
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Agent '{agent_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── Network normalizers ──────────────────────────────────────────
+
+    @staticmethod
+    def _norm_network(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        for k in ("id", "owner_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_participant(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        for k in ("id", "network_id", "agent_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_net_msg(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        for k in ("id", "network_id", "sender_participant_id", "recipient_participant_id", "in_reply_to_id"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        for k in ("created_at", "updated_at"):
+            if k in out and out[k] is not None:
+                out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_context_entry(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        if "message_id" in out and out["message_id"] is not None:
+            out["message_id"] = str(out["message_id"])
+        if "timestamp" in out and out["timestamp"] is not None:
+            out["timestamp"] = str(out["timestamp"])
+        return out
 
     @staticmethod
     def _norm_conv(obj: Dict[str, Any]) -> Dict[str, Any]:
@@ -1307,6 +1760,219 @@ class AsyncIntunoClient:
 
         return net.id, caller_p.id, target_p.id
 
+    async def get_network(self, network_id: str) -> Network:
+        """Get a network by ID."""
+        try:
+            response = await self._http_client.get(f"/networks/{network_id}")
+            response.raise_for_status()
+            return Network(**self._norm_network(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Network '{network_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def delete_network(self, network_id: str) -> None:
+        """Delete a network. Only the owner can delete."""
+        try:
+            response = await self._http_client.delete(f"/networks/{network_id}")
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Network '{network_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def leave_network(self, network_id: str, participant_id: str) -> None:
+        """Remove a participant from a network."""
+        try:
+            response = await self._http_client.delete(
+                f"/networks/{network_id}/participants/{participant_id}"
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Participant '{participant_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_network_context(
+        self, network_id: str, limit: int = 50
+    ) -> NetworkContext:
+        """Read the shared context of a network (recent messages, ordered).
+
+        Useful for late-joining participants or summarization.
+        """
+        try:
+            response = await self._http_client.get(
+                f"/networks/{network_id}/context", params={"limit": limit}
+            )
+            response.raise_for_status()
+            data = response.json()
+            entries = [ContextEntry(**self._norm_context_entry(e)) for e in data.get("entries", [])]
+            return NetworkContext(network_id=str(data.get("network_id", network_id)), entries=entries)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def send_to_mailbox(
+        self,
+        network_id: str,
+        sender_participant_id: str,
+        recipient_participant_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> NetworkMessage:
+        """Send a mailbox message (fully async — stored without push delivery).
+
+        The recipient reads via ``get_inbox``. Use for fire-and-forget or when
+        the recipient has no callback URL.
+        """
+        body: Dict[str, Any] = {
+            "sender_participant_id": sender_participant_id,
+            "recipient_participant_id": recipient_participant_id,
+            "content": content,
+        }
+        if metadata:
+            body["metadata"] = metadata
+        try:
+            response = await self._http_client.post(
+                f"/networks/{network_id}/mailbox", json=body
+            )
+            response.raise_for_status()
+            return NetworkMessage(**self._norm_net_msg(response.json()))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Mailbox send failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def get_inbox(
+        self,
+        network_id: str,
+        participant_id: str,
+        channel_type: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[NetworkMessage]:
+        """Poll inbox for a participant. Returns unread messages only.
+
+        Pair with ``acknowledge_messages`` to mark them as read.
+        """
+        params: Dict[str, Any] = {"limit": limit}
+        if channel_type:
+            params["channel_type"] = channel_type
+        try:
+            response = await self._http_client.get(
+                f"/networks/{network_id}/inbox/{participant_id}", params=params
+            )
+            response.raise_for_status()
+            return [NetworkMessage(**self._norm_net_msg(m)) for m in response.json()]
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def acknowledge_messages(
+        self, network_id: str, message_ids: List[str]
+    ) -> int:
+        """Mark messages as read. Returns the number actually acknowledged."""
+        try:
+            response = await self._http_client.post(
+                f"/networks/{network_id}/messages/ack",
+                json={"message_ids": message_ids},
+            )
+            response.raise_for_status()
+            return int(response.json().get("acknowledged", 0))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Ack failed: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    # ── A2A agent import ─────────────────────────────────────────────
+
+    async def preview_a2a_card(self, url: str) -> Dict[str, Any]:
+        """Fetch an A2A Agent Card from a URL without importing it.
+
+        Returns the card dict. Use this to inspect capabilities before
+        calling ``import_a2a_agent``.
+        """
+        try:
+            response = await self._http_client.get(
+                "/a2a/agents/fetch-card", params={"url": url}
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise IntunoError(data.get("error", "Failed to fetch Agent Card"))
+            return data.get("card", {})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"Failed to fetch card: {e.response.text}") from e
+        except httpx.RequestError as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def import_a2a_agent(self, url: str) -> Agent:
+        """Import an external A2A agent by URL.
+
+        Fetches the Agent Card, registers the agent, and indexes it for
+        semantic discovery. The returned ``Agent`` is fully discoverable
+        via ``discover()`` and invocable via ``invoke()``.
+        """
+        try:
+            response = await self._http_client.post(
+                "/a2a/agents/import", json={"url": url}
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise IntunoError(data.get("error", "Import failed"))
+            # Backend returns a subset of Agent fields; fetch full record for consistency.
+            return await self.get_agent(data["agent_id"])
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            raise IntunoError(f"A2A import failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
+    async def refresh_a2a_agent(self, agent_id: str) -> Agent:
+        """Re-fetch an imported A2A agent's card and update its registry entry."""
+        try:
+            response = await self._http_client.post(
+                f"/a2a/agents/{agent_id}/refresh"
+            )
+            response.raise_for_status()
+            data = response.json()
+            if not data.get("success"):
+                raise IntunoError(data.get("error", "Refresh failed"))
+            return await self.get_agent(data["agent_id"])
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("Invalid API key.") from e
+            if e.response.status_code == 404:
+                raise IntunoError(f"Agent '{agent_id}' not found.") from e
+            raise IntunoError(f"API request failed: {e.response.text}") from e
+        except (httpx.RequestError, ValidationError) as e:
+            raise IntunoError(f"An unexpected error occurred: {e}") from e
+
     # ── Normalizers ──────────────────────────────────────────────────
 
     @staticmethod
@@ -1340,6 +2006,15 @@ class AsyncIntunoClient:
         for k in ("created_at", "updated_at"):
             if k in out and out[k] is not None:
                 out[k] = str(out[k])
+        return out
+
+    @staticmethod
+    def _norm_context_entry(obj: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(obj)
+        if "message_id" in out and out["message_id"] is not None:
+            out["message_id"] = str(out["message_id"])
+        if "timestamp" in out and out["timestamp"] is not None:
+            out["timestamp"] = str(out["timestamp"])
         return out
 
     async def close(self):

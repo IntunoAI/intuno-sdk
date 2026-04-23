@@ -100,7 +100,7 @@ def test_sync_invoke_via_agent_by_id_from_discover(sync_client: IntunoClient):
     agents = sync_client.discover(query="test")
     agent = agents[0]
 
-    result = agent.invoke(capability_name_or_id="cap-id-1", input_data={})
+    result = agent.invoke(input_data={})
     assert result.success is True
     assert result.data == {"result": "ok"}
 
@@ -118,21 +118,8 @@ def test_sync_invoke_via_agent_by_id(sync_client: IntunoClient):
     agents = sync_client.discover(query="test")
     agent = agents[0]
 
-    result = agent.invoke(capability_name_or_id="cap-id-1", input_data={})
+    result = agent.invoke(input_data={})
     assert result.success is True
-
-
-@respx.mock
-def test_sync_invoke_invalid_name_raises_error(sync_client: IntunoClient):
-    """Test that invoking with an invalid capability name raises ValueError."""
-    respx.get(f"{BASE_URL}/registry/discover").mock(
-        return_value=Response(200, json=MOCK_AGENT_RESPONSE)
-    )
-    agents = sync_client.discover(query="test")
-    agent = agents[0]
-
-    with pytest.raises(ValueError):
-        agent.invoke(capability_name_or_id="invalid-name", input_data={})
 
 
 @respx.mock
@@ -176,7 +163,7 @@ async def test_async_invoke_via_agent_by_id_from_discover(async_client: AsyncInt
     agents = await async_client.discover(query="test")
     agent = agents[0]
 
-    result = await agent.ainvoke(capability_name_or_id="cap-id-1", input_data={})
+    result = await agent.ainvoke(input_data={})
     assert result.success is True
     assert result.data == {"result": "ok"}
 
@@ -195,22 +182,8 @@ async def test_async_invoke_via_agent_by_id(async_client: AsyncIntunoClient):
     agents = await async_client.discover(query="test")
     agent = agents[0]
 
-    result = await agent.ainvoke(capability_name_or_id="cap-id-1", input_data={})
+    result = await agent.ainvoke(input_data={})
     assert result.success is True
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_async_invoke_invalid_name_raises_error(async_client: AsyncIntunoClient):
-    """Test that async invoking with an invalid capability name raises ValueError."""
-    respx.get(f"{BASE_URL}/registry/discover").mock(
-        return_value=Response(200, json=MOCK_AGENT_RESPONSE)
-    )
-    agents = await async_client.discover(query="test")
-    agent = agents[0]
-
-    with pytest.raises(ValueError):
-        await agent.ainvoke(capability_name_or_id="invalid-name", input_data={})
 
 
 @pytest.mark.asyncio
@@ -226,7 +199,7 @@ async def test_async_invoke_broker_failure_raises_invocation_error(
 
     with pytest.raises(InvocationError):
         await async_client.ainvoke(
-            agent_id="agent-1", capability_id="cap-1", input_data={}
+            agent_id="agent-1", input_data={}
         )
 
 
@@ -248,7 +221,7 @@ def test_invoke_sends_agent_id_not_uuid(sync_client: IntunoClient):
     assert agent.id == "uuid-1"
     assert agent.agent_id == "agent-1"
 
-    agent.invoke(capability_name_or_id="cap-id-1", input_data={"x": 1})
+    agent.invoke(input_data={"x": 1})
 
     sent_body = route.calls[0].request.content
     import json
@@ -268,7 +241,6 @@ def test_sync_invoke_with_external_user_id(sync_client: IntunoClient):
 
     result = sync_client.invoke(
         agent_id="agent-1",
-        capability_id="cap-1",
         input_data={"x": 1},
         conversation_id="conv-123",
         external_user_id="user-alice",
@@ -291,7 +263,6 @@ async def test_async_invoke_with_external_user_id(async_client: AsyncIntunoClien
 
     result = await async_client.ainvoke(
         agent_id="agent-1",
-        capability_id="cap-1",
         input_data={"x": 1},
         external_user_id="user-bob",
     )

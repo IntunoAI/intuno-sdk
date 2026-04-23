@@ -290,6 +290,155 @@ async def get_task_status(task_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Network tools (multi-directional communication)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def create_network(name: str, topology: str = "mesh") -> str:
+    """Create a new communication network for multi-directional agent comms.
+
+    Use this to set up a space where multiple agents can exchange calls,
+    messages, and mailbox entries. Default topology "mesh" lets every
+    participant talk to every other participant.
+
+    Args:
+        name: Human-readable network name.
+        topology: One of "mesh", "star", "ring", "custom" (default "mesh").
+    """
+    client = _get_client()
+    try:
+        net = await client.create_network(name=name, topology=topology)
+        return json.dumps(
+            {"network_id": net.id, "name": net.name, "topology": net.topology_type},
+            indent=2,
+        )
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def join_network(
+    network_id: str,
+    name: str,
+    participant_type: str = "agent",
+    callback_url: Optional[str] = None,
+    polling_enabled: bool = False,
+) -> str:
+    """Add a participant to an existing network.
+
+    Participants can be agents (receive pushed calls/messages via callback_url)
+    or personas (poll for messages). Enable polling_enabled=true when the
+    participant has no public callback URL.
+
+    Args:
+        network_id: ID from create_network.
+        name: Unique name of the participant within the network.
+        participant_type: "agent" | "persona" | "orchestrator".
+        callback_url: Where Intuno POSTs inbound calls/messages for this participant.
+        polling_enabled: If true, skip push delivery; read via get_inbox.
+    """
+    client = _get_client()
+    try:
+        p = await client.join_network(
+            network_id=network_id,
+            name=name,
+            participant_type=participant_type,
+            callback_url=callback_url,
+            polling_enabled=polling_enabled,
+        )
+        return json.dumps(
+            {"participant_id": p.id, "network_id": p.network_id, "name": p.name},
+            indent=2,
+        )
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def send_network_message(
+    network_id: str,
+    sender_participant_id: str,
+    recipient_participant_id: str,
+    content: str,
+) -> str:
+    """Send an asynchronous message from one participant to another within a network.
+
+    Fire-and-forget — the message is delivered and stored without blocking.
+    For a synchronous request/response, use call_network_participant instead.
+
+    Args:
+        network_id: The network.
+        sender_participant_id: Sending participant.
+        recipient_participant_id: Receiving participant.
+        content: Message body.
+    """
+    client = _get_client()
+    try:
+        msg = await client.network_send(
+            network_id=network_id,
+            sender_participant_id=sender_participant_id,
+            recipient_participant_id=recipient_participant_id,
+            content=content,
+        )
+        return json.dumps(
+            {"message_id": msg.id, "status": msg.status, "channel_type": msg.channel_type},
+            indent=2,
+        )
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def get_network_context(network_id: str, limit: int = 50) -> str:
+    """Read the shared context (recent messages) of a network.
+
+    Use this to catch up on a network's conversation history — useful for
+    late-joining participants or summarization.
+
+    Args:
+        network_id: The network to read.
+        limit: Max number of entries to return (1-200, default 50).
+    """
+    client = _get_client()
+    try:
+        ctx = await client.get_network_context(network_id=network_id, limit=limit)
+        entries = [
+            {
+                "sender": e.sender,
+                "recipient": e.recipient,
+                "channel": e.channel,
+                "content": e.content,
+                "timestamp": e.timestamp,
+            }
+            for e in ctx.entries
+        ]
+        return json.dumps({"network_id": ctx.network_id, "entries": entries}, indent=2)
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+async def import_a2a_agent(url: str) -> str:
+    """Import an external A2A-compatible agent into the Intuno network.
+
+    Fetches the Agent Card from the given URL, registers it, and indexes
+    it for semantic discovery. Once imported, the agent is indistinguishable
+    from natively registered agents — it shows up in discover_agents results
+    and can be invoked the same way.
+
+    Args:
+        url: Base URL of the external A2A agent (e.g., "https://some-agent.com").
+    """
+    client = _get_client()
+    try:
+        agent = await client.import_a2a_agent(url=url)
+        return json.dumps(_agent_summary(agent), indent=2)
+    except IntunoError as e:
+        return json.dumps({"error": str(e)})
+
+
+# ---------------------------------------------------------------------------
 # Resources
 # ---------------------------------------------------------------------------
 

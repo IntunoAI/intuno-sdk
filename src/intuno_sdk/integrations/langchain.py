@@ -206,3 +206,169 @@ def make_tools_from_agent(agent: Agent) -> List[Tool]:
         args_schema=args_schema,
     )
     return [tool]
+
+
+# ---------------------------------------------------------------------------
+# Network tools — multi-directional comms for LangChain agents
+# ---------------------------------------------------------------------------
+
+
+def create_network_tools(
+    client: Union[IntunoClient, AsyncIntunoClient],
+    agent_name: str,
+    callback_base_url: Optional[str] = None,
+) -> List[BaseTool]:
+    """Create LangChain tools for participating in the Intuno network.
+
+    Returns three tools:
+      - ``intuno_call_agent``: synchronous request/response to another agent
+      - ``intuno_send_message``: fire-and-forget async message
+      - ``intuno_import_a2a_agent``: import any A2A-compatible external agent
+
+    Each tool auto-provisions a private mesh network between the caller
+    (identified by ``agent_name``) and the target, so the LLM doesn't need
+    to handle network/participant plumbing.
+
+    Args:
+        client: Sync or async IntunoClient.
+        agent_name: The LangChain agent's name — used as caller identity.
+        callback_base_url: Optional base URL for inbound callbacks (e.g.,
+            ``http://localhost:8001``). Required if the agent wants to
+            *receive* messages, not just send.
+    """
+
+    class CallInput(BaseModel):
+        agent_name: str = Field(description="Name of the target agent (from intuno_agent_discovery results).")
+        message: str = Field(description="Message to send to the target agent.")
+
+    class SendInput(BaseModel):
+        agent_name: str = Field(description="Name of the target agent.")
+        message: str = Field(description="Message to send (fire-and-forget).")
+
+    class ImportInput(BaseModel):
+        url: str = Field(description="Base URL of the external A2A agent.")
+
+    def _resolve_target_sync(target_name: str) -> Optional[str]:
+        if not isinstance(client, IntunoClient):
+            raise TypeError("A synchronous IntunoClient is required.")
+        agents = client.discover(target_name, limit=5)
+        for a in agents:
+            if a.name == target_name:
+                return a.id
+        return None
+
+    async def _resolve_target_async(target_name: str) -> Optional[str]:
+        if not isinstance(client, AsyncIntunoClient):
+            raise TypeError("An asynchronous AsyncIntunoClient is required.")
+        agents = await client.discover(target_name, limit=5)
+        for a in agents:
+            if a.name == target_name:
+                return a.id
+        return None
+
+    # ── intuno_call_agent ──
+    def _call_sync(agent_name: str, message: str) -> str:  # noqa: ARG001 (shadowing ok)
+        target_id = _resolve_target_sync(agent_name)
+        if not target_id:
+            return f"Agent '{agent_name}' not found on the network."
+        network_id, my_pid, target_pid = client.ensure_network(
+            caller_name=_outer_agent_name,
+            target_name=agent_name,
+            caller_type="agent",
+            target_agent_id=target_id,
+            callback_base_url=callback_base_url,
+        )
+        result = client.network_call(network_id, my_pid, target_pid, message)
+        return str(result.response)
+
+    async def _call_async(agent_name: str, message: str) -> str:
+        target_id = await _resolve_target_async(agent_name)
+        if not target_id:
+            return f"Agent '{agent_name}' not found on the network."
+        network_id, my_pid, target_pid = await client.ensure_network(
+            caller_name=_outer_agent_name,
+            target_name=agent_name,
+            caller_type="agent",
+            target_agent_id=target_id,
+            callback_base_url=callback_base_url,
+        )
+        result = await client.network_call(network_id, my_pid, target_pid, message)
+        return str(result.response)
+
+    # ── intuno_send_message ──
+    def _send_sync(agent_name: str, message: str) -> str:
+        target_id = _resolve_target_sync(agent_name)
+        if not target_id:
+            return f"Agent '{agent_name}' not found on the network."
+        network_id, my_pid, target_pid = client.ensure_network(
+            caller_name=_outer_agent_name,
+            target_name=agent_name,
+            caller_type="agent",
+            target_agent_id=target_id,
+            callback_base_url=callback_base_url,
+        )
+        msg = client.network_send(network_id, my_pid, target_pid, message)
+        return f"Message sent (id={msg.id}, status={msg.status})."
+
+    async def _send_async(agent_name: str, message: str) -> str:
+        target_id = await _resolve_target_async(agent_name)
+        if not target_id:
+            return f"Agent '{agent_name}' not found on the network."
+        network_id, my_pid, target_pid = await client.ensure_network(
+            caller_name=_outer_agent_name,
+            target_name=agent_name,
+            caller_type="agent",
+            target_agent_id=target_id,
+            callback_base_url=callback_base_url,
+        )
+        msg = await client.network_send(network_id, my_pid, target_pid, message)
+        return f"Message sent (id={msg.id}, status={msg.status})."
+
+    # ── intuno_import_a2a_agent ──
+    def _import_sync(url: str) -> str:
+        if not isinstance(client, IntunoClient):
+            raise TypeError("A synchronous IntunoClient is required.")
+        agent = client.import_a2a_agent(url=url)
+        return f"Imported: {agent.name} ({agent.agent_id}). Now discoverable on the network."
+
+    async def _import_async(url: str) -> str:
+        if not isinstance(client, AsyncIntunoClient):
+            raise TypeError("An asynchronous AsyncIntunoClient is required.")
+        agent = await client.import_a2a_agent(url=url)
+        return f"Imported: {agent.name} ({agent.agent_id}). Now discoverable on the network."
+
+    _outer_agent_name = agent_name
+
+    return [
+        Tool(
+            name="intuno_call_agent",
+            description=(
+                "Send a message to another agent on the Intuno network and wait for its reply "
+                "(synchronous call). Auto-provisions a private network between you and the target. "
+                "Use when you need the target's response before continuing."
+            ),
+            func=_call_sync,
+            coroutine=_call_async,
+            args_schema=CallInput,
+        ),
+        Tool(
+            name="intuno_send_message",
+            description=(
+                "Send an asynchronous message to another agent on the Intuno network (fire-and-forget). "
+                "The message is delivered without blocking. Use for notifications or when you don't need a reply."
+            ),
+            func=_send_sync,
+            coroutine=_send_async,
+            args_schema=SendInput,
+        ),
+        Tool(
+            name="intuno_import_a2a_agent",
+            description=(
+                "Import an external A2A-compatible agent into the Intuno network by its URL. "
+                "Once imported, the agent shows up in discovery and can be invoked or called like any other agent."
+            ),
+            func=_import_sync,
+            coroutine=_import_async,
+            args_schema=ImportInput,
+        ),
+    ]
