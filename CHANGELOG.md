@@ -5,6 +5,31 @@ All notable changes to `intuno-sdk` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-04-23
+
+### Added
+
+- **Service delegation.** `IntunoClient` and `AsyncIntunoClient` accept
+  an optional `act_as_user_id` kwarg. When set, the client sends
+  `X-Service-Key: <api_key>` + `X-On-Behalf-Of: <uuid>` instead of the
+  normal user auth headers. The backend attributes every call to the
+  delegated user.
+
+  Intended for internal services (e.g. `wisdom-agents` hosting
+  multi-tenant entities) that need to make network / registry / broker
+  calls on behalf of specific users without holding those users' API
+  keys. Not for end-user SDK code.
+
+  ```python
+  from uuid import UUID
+  from intuno_sdk import AsyncIntunoClient
+
+  client = AsyncIntunoClient(
+      api_key=settings.AGENTS_SERVICE_API_KEY,   # the service secret
+      act_as_user_id=UUID("..."),                 # the entity's owner
+  )
+  ```
+
 ## [0.4.0] — 2026-04-22
 
 ### Added
@@ -102,6 +127,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   (`list_conversations`, `get_messages`), and LangChain / OpenAI
   integration helpers.
 
+[0.5.0]: https://github.com/IntunoAI/intuno-sdk/releases/tag/v0.5.0
 [0.4.0]: https://github.com/IntunoAI/intuno-sdk/releases/tag/v0.4.0
 [0.3.0]: https://github.com/IntunoAI/intuno-sdk/releases/tag/v0.3.0
 [0.2.2]: https://github.com/IntunoAI/intuno-sdk/releases/tag/v0.2.2

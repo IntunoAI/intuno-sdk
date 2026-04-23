@@ -69,6 +69,57 @@ def test_init_requires_api_key():
         AsyncIntunoClient(api_key="")
 
 
+# --- Service delegation (act_as_user_id) ---
+
+
+def _header_keys(client):
+    return {k.lower() for k in client._http_client.headers.keys()}
+
+
+def test_normal_mode_sends_x_api_key():
+    c = IntunoClient(api_key="wsk_user_key")
+    keys = _header_keys(c)
+    assert "x-api-key" in keys
+    assert "x-service-key" not in keys
+    assert "x-on-behalf-of" not in keys
+
+
+def test_delegation_sends_service_key_and_on_behalf_of():
+    from uuid import UUID
+
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+    c = IntunoClient(api_key="service_secret", act_as_user_id=user_id)
+    keys = _header_keys(c)
+    assert "x-service-key" in keys
+    assert "x-on-behalf-of" in keys
+    # Normal auth header is NOT sent in service mode
+    assert "x-api-key" not in keys
+    assert "authorization" not in keys
+    # UUID stringified
+    assert c._http_client.headers["X-On-Behalf-Of"] == str(user_id)
+    # Stored attribute for introspection
+    assert c.act_as_user_id == user_id
+
+
+def test_delegation_accepts_string_user_id():
+    c = IntunoClient(
+        api_key="service_secret",
+        act_as_user_id="22222222-2222-4222-8222-222222222222",
+    )
+    assert c._http_client.headers["X-On-Behalf-Of"] == "22222222-2222-4222-8222-222222222222"
+
+
+def test_async_delegation_sends_service_key_and_on_behalf_of():
+    from uuid import UUID
+
+    user_id = UUID("33333333-3333-4333-8333-333333333333")
+    c = AsyncIntunoClient(api_key="service_secret", act_as_user_id=user_id)
+    keys = _header_keys(c)
+    assert "x-service-key" in keys
+    assert "x-on-behalf-of" in keys
+    assert "x-api-key" not in keys
+
+
 # --- Synchronous Client Tests ---
 
 
