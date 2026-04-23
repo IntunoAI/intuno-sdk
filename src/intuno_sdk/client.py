@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from uuid import UUID as UUIDType
 
 import httpx
 from pydantic import ValidationError
@@ -29,12 +30,25 @@ from intuno_sdk.models import (
 )
 
 
-def _build_auth_headers(api_key: str) -> dict:
-    """Build auth headers, supporting both API keys and JWT bearer tokens."""
+def _build_auth_headers(
+    api_key: str,
+    act_as_user_id: Optional[Union[str, "UUIDType"]] = None,
+) -> dict:
+    """Build auth headers.
+
+    - Plain user key / JWT: sends ``X-API-Key`` or ``Authorization: Bearer``.
+    - Service delegation (``act_as_user_id`` set): sends ``X-Service-Key``
+      + ``X-On-Behalf-Of`` instead. The ``api_key`` argument is the
+      service secret in this mode.
+    """
     headers = {
         "Content-Type": "application/json",
         "User-Agent": f"Intuno-SDK/{SDK_VERSION}",
     }
+    if act_as_user_id is not None:
+        headers["X-Service-Key"] = api_key
+        headers["X-On-Behalf-Of"] = str(act_as_user_id)
+        return headers
     # JWT tokens start with 'eyJ' (base64-encoded JSON header)
     if api_key.startswith("eyJ"):
         headers["Authorization"] = f"Bearer {api_key}"
@@ -46,6 +60,14 @@ def _build_auth_headers(api_key: str) -> dict:
 class IntunoClient:
     """
     The main synchronous client for interacting with the Intuno Agent Network.
+
+    Service delegation
+    ------------------
+    Pass ``act_as_user_id`` to operate on behalf of a specific user. The
+    ``api_key`` you provide is then used as a *service secret* — sent as
+    ``X-Service-Key`` alongside ``X-On-Behalf-Of`` — and the backend
+    attributes every call to the delegated user. Only internal services
+    (wisdom-agents today) should use this mode.
     """
 
     def __init__(
@@ -53,16 +75,19 @@ class IntunoClient:
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 30.0,
+        *,
+        act_as_user_id: Optional[Union[str, UUIDType]] = None,
     ):
         if not api_key:
             raise APIKeyMissingError()
 
         self.api_key = api_key
         self.base_url = base_url
+        self.act_as_user_id = act_as_user_id
         self._http_client = httpx.Client(
             base_url=self.base_url,
             timeout=timeout,
-            headers=_build_auth_headers(api_key),
+            headers=_build_auth_headers(api_key, act_as_user_id=act_as_user_id),
         )
 
     def discover(self, query: str, limit: int = 10) -> List[Agent]:
@@ -1038,6 +1063,8 @@ class IntunoClient:
 class AsyncIntunoClient:
     """
     The main asynchronous client for interacting with the Intuno Agent Network.
+
+    Service delegation: see ``IntunoClient`` — same ``act_as_user_id`` kwarg.
     """
 
     def __init__(
@@ -1045,16 +1072,19 @@ class AsyncIntunoClient:
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 30.0,
+        *,
+        act_as_user_id: Optional[Union[str, UUIDType]] = None,
     ):
         if not api_key:
             raise APIKeyMissingError()
 
         self.api_key = api_key
         self.base_url = base_url
+        self.act_as_user_id = act_as_user_id
         self._http_client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=timeout,
-            headers=_build_auth_headers(api_key),
+            headers=_build_auth_headers(api_key, act_as_user_id=act_as_user_id),
         )
 
     async def discover(self, query: str, limit: int = 10) -> List[Agent]:
